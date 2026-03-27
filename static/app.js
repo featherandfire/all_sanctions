@@ -349,7 +349,7 @@ async function renderStatsView() {
       </div>
     </div>
 
-    <div class="charts-row" style="margin-top:16px">
+    <div class="charts-row">
       <div class="chart-card">
         <div class="chart-title">Cyber &amp; Crypto Records by Country</div>
         <div id="pie-cyber" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap"></div>
@@ -358,16 +358,16 @@ async function renderStatsView() {
         <div class="chart-title">Medicaid Excluded Providers by US State</div>
         <div id="pie-medicaid" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap"></div>
       </div>
+    </div>
+
+    <div class="charts-row">
       <div class="chart-card">
         <div class="chart-title">US Population by State <span style="font-size:10px;color:var(--muted);font-weight:400">ACS 2022</span></div>
         <div id="pie-population" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading Census data…</div>
         </div>
       </div>
-    </div>
-
-    <div class="charts-row" style="margin-top:16px">
-      <div class="chart-card" style="flex:1">
+      <div class="chart-card">
         <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">excluded providers per 10,000 residents</span></div>
         <div id="pie-medicaid-rate" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div>
@@ -375,14 +375,14 @@ async function renderStatsView() {
       </div>
     </div>
 
-    <div class="charts-row" style="margin-top:16px">
-      <div class="chart-card" style="overflow:hidden">
+    <div class="charts-row">
+      <div class="chart-card">
         <div class="chart-title">OFAC SDN Crypto Wallets by Country</div>
         <div id="bar-sdn-crypto" style="width:100%">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading SDN data… (cached after first load)</div>
         </div>
       </div>
-      <div class="chart-card" style="overflow:hidden">
+      <div class="chart-card">
         <div class="chart-title">PEP Records by Country</div>
         <div id="bar-pep" style="width:100%"></div>
       </div>

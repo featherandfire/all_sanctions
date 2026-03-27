@@ -61,7 +61,8 @@
   .stat-value.red { color: var(--red); }
 
   .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; height: 300px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+  .chart-card .chart-title { flex-shrink: 0; }
   .chart-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 14px; }
 
   .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
