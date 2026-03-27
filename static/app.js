@@ -355,6 +355,12 @@ async function renderStatsView() {
         <div class="chart-title">Medicaid Excluded Providers by US State</div>
         <div id="pie-medicaid" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap"></div>
       </div>
+      <div class="chart-card">
+        <div class="chart-title">US Population by State <span style="font-size:10px;color:var(--muted);font-weight:400">ACS 2022</span></div>
+        <div id="pie-population" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading Census data…</div>
+        </div>
+      </div>
     </div>
 
     <div class="charts-row" style="margin-top:16px">
@@ -392,6 +398,24 @@ async function renderStatsView() {
       if (!el) return;
       el.innerHTML = '';
       drawBarChart('bar-sdn-crypto', sdnData, '#f6c90e');
+    });
+  }
+
+  // US population by state pie chart (Census API, cached after first load)
+  const POP_COLORS = [
+    '#4f8ef7','#3ecf8e','#f6c90e','#f56565','#a78bfa','#fb923c',
+    '#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b',
+    '#fbbf24','#c084fc','#86efac','#38bdf8',
+  ];
+  if (_statsMeta.popData) {
+    drawPieChart('pie-population', _statsMeta.popData.slice(0, 15), POP_COLORS);
+  } else {
+    fetch('/api/stats/population-by-state').then(r => r.json()).then(popData => {
+      _statsMeta.popData = popData;
+      const el = document.getElementById('pie-population');
+      if (!el) return;
+      el.innerHTML = '';
+      drawPieChart('pie-population', popData.slice(0, 15), POP_COLORS);
     });
   }
 }

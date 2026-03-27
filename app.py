@@ -14,6 +14,7 @@ from routes.datasets import datasets_bp
 from routes.cyber import cyber_bp
 from routes.entity_search import entity_search_bp
 from routes.resources import resources_bp
+from routes.census import census_bp
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -21,6 +22,7 @@ app.register_blueprint(datasets_bp)
 app.register_blueprint(cyber_bp)
 app.register_blueprint(entity_search_bp)
 app.register_blueprint(resources_bp)
+app.register_blueprint(census_bp)
 
 
 @app.route("/")
