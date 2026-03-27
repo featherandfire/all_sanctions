@@ -289,6 +289,9 @@ async function renderStatsView() {
     .sort((a, b) => b[1] - a[1]).slice(0, 15)
     .map(([label, value]) => ({ label, value }));
 
+  // Store for use in the rate chart (computed after population data loads)
+  _statsMeta.medicaidByState = medicaidByState;
+
   // ── PEP records by country (bar data) ────────────────────────────────────
   const pepByCountry = {};
   for (const ds of allDatasets) {
@@ -364,6 +367,15 @@ async function renderStatsView() {
     </div>
 
     <div class="charts-row" style="margin-top:16px">
+      <div class="chart-card" style="flex:1">
+        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">excluded providers per 10,000 residents</span></div>
+        <div id="pie-medicaid-rate" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-row" style="margin-top:16px">
       <div class="chart-card" style="overflow:hidden">
         <div class="chart-title">OFAC SDN Crypto Wallets by Country</div>
         <div id="bar-sdn-crypto" style="width:100%">
@@ -409,13 +421,13 @@ async function renderStatsView() {
   ];
   if (_statsMeta.popData) {
     drawPieChart('pie-population', _statsMeta.popData.slice(0, 15), POP_COLORS);
+    _drawMedicaidRateChart();
   } else {
     fetch('/api/stats/population-by-state').then(r => r.json()).then(popData => {
       _statsMeta.popData = popData;
-      const el = document.getElementById('pie-population');
-      if (!el) return;
-      el.innerHTML = '';
-      drawPieChart('pie-population', popData.slice(0, 15), POP_COLORS);
+      const popEl = document.getElementById('pie-population');
+      if (popEl) { popEl.innerHTML = ''; drawPieChart('pie-population', popData.slice(0, 15), POP_COLORS); }
+      _drawMedicaidRateChart();
     });
   }
 }
@@ -488,9 +500,21 @@ function drawBarChart(containerId, data, color) {
   }
 }
 
-function drawPieChart(containerId, data, colors) {
+// opts: { unit, centerLabel, centerValue, valueFmt, legendFmt }
+//   unit        — word after the value in the tooltip  (default: 'entities')
+//   centerLabel — small text below the center number   (default: 'entities')
+//   centerValue — override the center big number text  (default: formatted total)
+//   valueFmt    — fn(value) for tooltip value display  (default: toLocaleString)
+//   legendFmt   — fn(value, pct) for legend right col  (default: pct + '%')
+function drawPieChart(containerId, data, colors, opts) {
   const container = document.getElementById(containerId);
   if (!container || !data.length) return;
+
+  const unit        = (opts && opts.unit)        || 'entities';
+  const centerLabel = (opts && opts.centerLabel) || 'entities';
+  const centerValue = (opts && opts.centerValue) || null;
+  const valueFmt    = (opts && opts.valueFmt)    || (v => v.toLocaleString());
+  const legendFmt   = (opts && opts.legendFmt)   || ((_v, pct) => pct + '%');
 
   const size = 220;
   const radius = size / 2 - 8;
@@ -529,7 +553,7 @@ function drawPieChart(containerId, data, colors) {
       tip.style.display = 'block';
       tip.style.left = (event.clientX + 14) + 'px';
       tip.style.top  = (event.clientY - 10) + 'px';
-      tip.innerHTML = `<strong>${esc(d.data.label)}</strong><br>${d.data.value.toLocaleString()} entities<br><span style="color:#64748b">${pct}% of total</span>`;
+      tip.innerHTML = `<strong>${esc(d.data.label)}</strong><br>${valueFmt(d.data.value)} ${unit}<br><span style="color:#64748b">${pct}% of chart</span>`;
       d3.select(this).attr('d', arcHover);
     })
     .on('mouseleave', function() {
@@ -537,13 +561,15 @@ function drawPieChart(containerId, data, colors) {
       d3.select(this).attr('d', arc);
     });
 
-  // Centre label: total
+  // Centre label
+  const centerText = centerValue !== null ? centerValue
+    : (total >= 1000 ? (total / 1000).toFixed(1) + 'k' : total.toLocaleString());
   g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
     .style('font-size', '15px').style('font-weight', '700').style('fill', '#e2e8f0')
-    .text(total >= 1000 ? (total / 1000).toFixed(1) + 'k' : total.toLocaleString());
+    .text(centerText);
   g.append('text').attr('text-anchor', 'middle').attr('dy', '1.1em')
     .style('font-size', '10px').style('fill', '#64748b')
-    .text('entities');
+    .text(centerLabel);
 
   // Legend
   const legend = d3.select(`#${containerId}`)
@@ -556,7 +582,41 @@ function drawPieChart(containerId, data, colors) {
       .attr('style', 'display:flex;align-items:center;gap:7px;font-size:11px;color:#e2e8f0;cursor:default')
       .html(`<span style="width:10px;height:10px;border-radius:2px;background:${colors[i % colors.length]};flex-shrink:0"></span>
              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.label)}">${esc(d.label)}</span>
-             <span style="color:#64748b;flex-shrink:0">${pct}%</span>`);
+             <span style="color:#64748b;flex-shrink:0">${legendFmt(d.value, pct)}</span>`);
+  });
+}
+
+function _drawMedicaidRateChart() {
+  const el = document.getElementById('pie-medicaid-rate');
+  if (!el || !_statsMeta || !_statsMeta.popData || !_statsMeta.medicaidByState) return;
+
+  // Build state-name → population lookup
+  const popMap = {};
+  for (const { label, value } of _statsMeta.popData) popMap[label] = value;
+
+  // Rate = excluded providers per 10,000 residents
+  const rateData = [];
+  for (const [state, excluded] of Object.entries(_statsMeta.medicaidByState)) {
+    const pop = popMap[state];
+    if (pop && excluded) {
+      rateData.push({ label: state, value: parseFloat(((excluded / pop) * 10000).toFixed(2)) });
+    }
+  }
+  rateData.sort((a, b) => b.value - a.value);
+
+  el.innerHTML = '';
+  const RATE_COLORS = [
+    '#f56565','#fb923c','#f6c90e','#3ecf8e','#4f8ef7','#a78bfa',
+    '#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b',
+    '#fbbf24','#c084fc','#86efac',
+  ];
+
+  drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), RATE_COLORS, {
+    unit: 'per 10k',
+    centerLabel: 'states',
+    centerValue: rateData.slice(0, 15).length.toString(),
+    valueFmt: v => v.toFixed(2),
+    legendFmt: v => v.toFixed(2),
   });
 }
 
