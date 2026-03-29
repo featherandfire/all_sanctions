@@ -1,0 +1,46 @@
+let allDatasets = [];
+let currentView = 'datasets';
+let currentLayout = 'grid';
+let searchTimer = null;
+
+// View-level API response caches — avoids re-fetching on tab revisit
+let _statsMeta = null;
+let _tagsMeta  = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadDatasets();
+  renderDatasetsView();
+}
+
+async function loadDatasets() {
+  const res = await fetch('/api/datasets');
+  allDatasets = await res.json();
+}
+
+// ── View switching ────────────────────────────────────────────────────────
+
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === view);
+  });
+  const titles = { datasets: 'Browse Datasets', stats: 'Statistics', cyber: 'Cyber & Crypto', pep: 'Politically Exposed Persons', medicaid: 'Medicaid Exclusions', 'entity-search': 'Entity Search', countries: 'By Country', tags: 'Tags' };
+  document.getElementById('page-title').textContent = titles[view];
+  const isDatasets = view === 'datasets';
+  document.getElementById('search-wrap').style.display = isDatasets ? '' : 'none';
+  document.getElementById('filter-select').style.display = isDatasets ? '' : 'none';
+  document.getElementById('view-toggle').style.display = isDatasets ? '' : 'none';
+
+  if (view === 'datasets') renderDatasetsView();
+  else if (view === 'stats') renderStatsView();
+  else if (view === 'cyber') renderCyberView();
+  else if (view === 'pep') renderPepView();
+  else if (view === 'medicaid') renderMedicaidView();
+  else if (view === 'entity-search') renderEntitySearchView();
+  else if (view === 'countries') renderCountryView();
+  else if (view === 'tags') renderTagsView();
+}
+
+init();
