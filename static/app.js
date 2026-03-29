@@ -362,7 +362,7 @@ async function renderStatsView() {
         </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">blacklisted providers as % of state population</span></div>
+        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">exclusion % share minus population % share</span></div>
         <div id="pie-medicaid-rate" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div>
         </div>
@@ -601,13 +601,20 @@ function _drawMedicaidRateChart() {
   const popMap = {};
   for (const { label, value } of _statsMeta.popData) popMap[label] = value;
 
-  // Ratio = excluded providers / state population, expressed as a percentage
+  // National totals
+  const totalExcluded = Object.values(_statsMeta.medicaidByState).reduce((s, n) => s + n, 0);
+  const totalPop      = _statsMeta.popData.reduce((s, r) => s + r.value, 0);
+
+  // Overrepresentation = (state_excluded% of national) - (state_pop% of national)
+  // Positive → state has disproportionately more exclusions than its population share
   const rateData = [];
   for (const [state, excluded] of Object.entries(_statsMeta.medicaidByState)) {
     const pop = popMap[state];
-    if (pop && excluded) {
-      rateData.push({ label: state, value: parseFloat(((excluded / pop) * 100).toFixed(4)) });
-    }
+    if (!pop || !excluded) continue;
+    const exclPct = (excluded / totalExcluded) * 100;
+    const popPct  = (pop      / totalPop)      * 100;
+    const diff    = parseFloat((exclPct - popPct).toFixed(4));
+    if (diff > 0) rateData.push({ label: state, value: diff });
   }
   rateData.sort((a, b) => b.value - a.value);
 
@@ -619,11 +626,11 @@ function _drawMedicaidRateChart() {
   ];
 
   drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), RATE_COLORS, {
-    unit: '% of population',
+    unit: 'pp over population share',
     centerLabel: 'states',
     centerValue: rateData.slice(0, 15).length.toString(),
-    valueFmt: v => v.toFixed(4) + '%',
-    legendFmt: v => v.toFixed(4) + '%',
+    valueFmt: v => '+' + v.toFixed(2) + 'pp',
+    legendFmt: v => '+' + v.toFixed(2) + 'pp',
   });
 }
 
