@@ -296,7 +296,7 @@ async function renderStatsView() {
     medicaidByState[state] = (medicaidByState[state] || 0) + (ds.entity_count || 0);
   }
   const medicaidPieData = Object.entries(medicaidByState)
-    .sort((a, b) => b[1] - a[1]).slice(0, 15)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([label, value]) => ({ label, value }));
 
   // Store for use in the rate chart (computed after population data loads)
@@ -409,20 +409,16 @@ async function renderStatsView() {
   drawPieChart('pie-medicaid', medicaidPieData, null, { colorMap: STATE_COLOR_MAP });
 
   // Cyber by country — entity-level scan across all crypto datasets (async, slow on first load)
-  function _buildCyberColorMap(data) {
-    const m = {};
-    data.forEach(d => { m[d.label] = _hashColor(d.label); });
-    return m;
-  }
+  const CYBER_PIE_COLORS = ['#f6c90e','#f56565','#a78bfa','#4f8ef7','#3ecf8e','#fb923c','#64748b','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8'];
   if (_statsMeta.cyberCountryData) {
-    drawPieChart('pie-cyber', _statsMeta.cyberCountryData, null, { colorMap: _buildCyberColorMap(_statsMeta.cyberCountryData), coloredLabels: true });
+    drawPieChart('pie-cyber', _statsMeta.cyberCountryData.slice(0, 10), CYBER_PIE_COLORS);
   } else {
     fetch('/api/stats/crypto-by-country').then(r => r.json()).then(cyberCountryData => {
       _statsMeta.cyberCountryData = cyberCountryData;
       const el = document.getElementById('pie-cyber');
       if (!el) return;
       el.innerHTML = '';
-      drawPieChart('pie-cyber', cyberCountryData, null, { colorMap: _buildCyberColorMap(cyberCountryData), coloredLabels: true });
+      drawPieChart('pie-cyber', cyberCountryData.slice(0, 10), CYBER_PIE_COLORS);
     });
   }
 
@@ -444,13 +440,13 @@ async function renderStatsView() {
 
   // US population by state pie chart (Census API, cached after first load)
   if (_statsMeta.popData) {
-    drawPieChart('pie-population', _statsMeta.popData.slice(0, 15), null, { colorMap: STATE_COLOR_MAP });
+    drawPieChart('pie-population', _statsMeta.popData.slice(0, 10), null, { colorMap: STATE_COLOR_MAP });
     _drawMedicaidRateChart();
   } else {
     fetch('/api/stats/population-by-state').then(r => r.json()).then(popData => {
       _statsMeta.popData = popData;
       const popEl = document.getElementById('pie-population');
-      if (popEl) { popEl.innerHTML = ''; drawPieChart('pie-population', popData.slice(0, 15), null, { colorMap: STATE_COLOR_MAP }); }
+      if (popEl) { popEl.innerHTML = ''; drawPieChart('pie-population', popData.slice(0, 10), null, { colorMap: STATE_COLOR_MAP }); }
       _drawMedicaidRateChart();
     });
   }
@@ -644,11 +640,11 @@ function _drawMedicaidRateChart() {
   rateData.sort((a, b) => b.value - a.value);
 
   el.innerHTML = '';
-  drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), null, {
+  drawPieChart('pie-medicaid-rate', rateData.slice(0, 10), null, {
     colorMap: STATE_COLOR_MAP,
     unit: 'pp over population share',
     centerLabel: 'states',
-    centerValue: rateData.slice(0, 15).length.toString(),
+    centerValue: rateData.slice(0, 10).length.toString(),
     valueFmt: v => '+' + v.toFixed(2) + 'pp',
     legendFmt: v => '+' + v.toFixed(2) + 'pp',
   });
