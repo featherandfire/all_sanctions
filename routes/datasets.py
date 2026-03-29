@@ -166,6 +166,24 @@ def api_pep_records():
     return _build_record_list("list.pep", ds_names)
 
 
+@datasets_bp.route("/api/stats/medicaid-by-sector")
+def api_medicaid_by_sector():
+    """Sector breakdown for a Medicaid dataset (default: us_ca_med_exclusions)."""
+    ds_name = request.args.get("dataset", "us_ca_med_exclusions")
+    entities = _get_entities(ds_name)
+    counts = {}
+    for row in entities:
+        for part in (row.get("sector") or "").split(","):
+            part = part.strip()
+            if part:
+                counts[part] = counts.get(part, 0) + 1
+    data = sorted(
+        [{"label": k, "value": v} for k, v in counts.items()],
+        key=lambda x: -x["value"]
+    )
+    return jsonify(data)
+
+
 @datasets_bp.route("/api/medicaid-records")
 def api_medicaid_records():
     """Paginated entity records from US Medicaid exclusion datasets."""

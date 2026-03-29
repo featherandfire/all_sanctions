@@ -1086,6 +1086,7 @@ async function openResourceTableForDataset(dsName) {
 
 let _medicaidTab = 'datasets';
 let _medicaidStateFilter = null;
+let _selectedMedicaidState = 'all';
 let _medFilterTimer = null;
 
 async function renderMedicaidView(tab) {
@@ -1122,52 +1123,174 @@ async function renderMedicaidView(tab) {
     </div>`;
 
   if (_medicaidTab === 'datasets') {
-    // State filter pills
-    const statePills = `
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center">
-        <span style="font-size:12px;color:var(--muted);margin-right:4px">State:</span>
-        <button class="med-filter active" data-state="all" onclick="medicaidFilter('all')"
-          style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:12px;cursor:pointer">
-          All (${medDatasets.length})
-        </button>
-        ${stateList.map(([state, dsList]) => {
-          const n = dsList.reduce((s, d) => s + (d.entity_count||0), 0);
-          return `<button class="med-filter" data-state="${esc(state)}" onclick="medicaidFilter('${esc(state)}')"
-            style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer">
-            ${esc(state)} <span style="color:var(--muted);font-size:10px">(${n.toLocaleString()})</span>
-          </button>`;
-        }).join('')}
-      </div>`;
+    // Ensure selected state is valid
+    if (_selectedMedicaidState !== 'all' && !byState[_selectedMedicaidState]) {
+      _selectedMedicaidState = 'all';
+    }
 
-    const cards = medDatasets
-      .sort((a, b) => (b.entity_count || 0) - (a.entity_count || 0))
-      .map(ds => {
-        const m = ds.name.match(/^us_([a-z]{2})_/);
-        const state = m ? (US_STATE_NAMES[m[1]] || m[1].toUpperCase()) : 'Federal';
-        const statusClass = ds.result === 'success' ? 'success' : ds.result ? 'error' : 'unknown';
-        return `<div class="dataset-card" data-state="${esc(state)}" onclick="showDetail('${ds.name}')">
-          <div class="card-header">
-            <div>
-              <div class="card-title">${esc(ds.title)}</div>
-              <div class="card-name">${esc(ds.name)}</div>
+    content.innerHTML = tabBar + statStrip + `
+      <div style="display:flex;gap:0;height:calc(100vh - 200px);margin:0 -24px -24px;border-top:1px solid var(--border);overflow:hidden">
+
+        <!-- State list (left panel) -->
+        <div style="width:240px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
+            <div style="position:relative">
+              <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="med-state-search" type="text" placeholder="Filter states…" oninput="filterMedicaidStates(this.value)"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px 6px 28px;font-size:12px;color:var(--text);outline:none">
             </div>
-            <div class="status-dot ${statusClass}"></div>
           </div>
-          ${ds.summary ? `<div class="card-summary">${esc(ds.summary)}</div>` : ''}
-          <div class="card-meta">
-            ${ds.entity_count ? `<div class="meta-item"><strong>${ds.entity_count.toLocaleString()}</strong> excluded providers</div>` : ''}
-            <div class="meta-item">${esc(state)}</div>
-            ${ds.updated_at ? `<div class="meta-item">${ds.updated_at}</div>` : ''}
+          <div id="med-state-list">
+            ${renderMedicaidStateRows(stateList, medDatasets)}
           </div>
-        </div>`;
-      }).join('');
+        </div>
 
-    content.innerHTML = tabBar + statStrip + statePills + `<div class="cards-grid" id="med-cards">${cards}</div>`;
+        <!-- Dataset panel (right) -->
+        <div style="flex:1;overflow-y:auto;padding:20px 24px" id="med-datasets-panel">
+          ${renderMedicaidStateDatasets(_selectedMedicaidState, byState, medDatasets)}
+        </div>
+      </div>`;
 
   } else {
     content.innerHTML = tabBar + statStrip + `<div id="med-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading Medicaid exclusion records…</div></div></div>`;
     await loadMedicaidPage(0);
   }
+}
+
+function renderMedicaidStateRows(stateList, medDatasets) {
+  const allActive = _selectedMedicaidState === 'all';
+  const allRow = `<div class="country-row" data-state="all" onclick="selectMedicaidState('all')"
+    style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;
+      background:${allActive ? 'var(--surface2)' : 'transparent'};
+      border-left:3px solid ${allActive ? 'var(--accent)' : 'transparent'};transition:all .12s">
+    <span style="font-size:18px;line-height:1;flex-shrink:0">🇺🇸</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;color:${allActive ? 'var(--text)' : 'var(--muted)'};font-weight:${allActive ? '600' : '400'}">All States</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${medDatasets.length} dataset${medDatasets.length !== 1 ? 's' : ''}</div>
+    </div>
+  </div>`;
+
+  const rows = stateList.map(([state, dsList]) => {
+    const active = _selectedMedicaidState === state;
+    const n = dsList.reduce((s, d) => s + (d.entity_count || 0), 0);
+    const color = STATE_COLOR_MAP[state] || '#94a3b8';
+    return `<div class="country-row" data-state="${esc(state)}" onclick="selectMedicaidState('${esc(state)}')"
+      style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;
+        background:${active ? 'var(--surface2)' : 'transparent'};
+        border-left:3px solid ${active ? 'var(--accent)' : 'transparent'};transition:all .12s">
+      <span style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;color:${active ? 'var(--text)' : 'var(--muted)'};font-weight:${active ? '600' : '400'};
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(state)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          ${dsList.length} dataset${dsList.length !== 1 ? 's' : ''} · ${fmtNum(n)} excluded
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return allRow + rows;
+}
+
+function renderMedicaidStateDatasets(state, byState, medDatasets) {
+  const dsList = state === 'all' ? medDatasets : (byState[state] || []);
+  const sorted = [...dsList].sort((a, b) => (b.entity_count || 0) - (a.entity_count || 0));
+  const totalEntities = dsList.reduce((s, d) => s + (d.entity_count || 0), 0);
+  const color = state !== 'all' ? (STATE_COLOR_MAP[state] || '#94a3b8') : null;
+
+  const header = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">
+      ${color
+        ? `<span style="width:20px;height:20px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>`
+        : `<span style="font-size:24px">🇺🇸</span>`}
+      <div>
+        <div style="font-size:18px;font-weight:700">${state === 'all' ? 'All States' : esc(state)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px">
+          ${dsList.length} dataset${dsList.length !== 1 ? 's' : ''} · ${fmtNum(totalEntities)} excluded providers
+        </div>
+      </div>
+    </div>`;
+
+  const cards = sorted.map(ds => {
+    const m = ds.name.match(/^us_([a-z]{2})_/);
+    const dsState = m ? (US_STATE_NAMES[m[1]] || m[1].toUpperCase()) : 'Federal';
+    const statusColor = ds.result === 'success' ? 'var(--green)' : ds.result ? 'var(--red)' : 'var(--muted)';
+    const tags = (ds.tags || []).slice(0, 3).map(t =>
+      `<span style="padding:2px 7px;background:var(--tag-bg);color:var(--tag-text);border-radius:10px;font-size:10px">${t}</span>`
+    ).join(' ');
+    return `<div class="dataset-card" style="margin-bottom:10px" onclick="showDetail('${ds.name}')">
+      <div class="card-header">
+        <div style="flex:1">
+          <div class="card-title">${esc(ds.title)}</div>
+          <div class="card-name">${esc(ds.name)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <span style="font-size:10px;color:${statusColor}">${ds.result || '—'}</span>
+          <div class="status-dot ${ds.result === 'success' ? 'success' : ds.result ? 'error' : 'unknown'}"></div>
+        </div>
+      </div>
+      ${ds.summary ? `<div class="card-summary">${esc(ds.summary)}</div>` : ''}
+      <div class="card-meta">
+        ${ds.entity_count ? `<div class="meta-item"><strong>${ds.entity_count.toLocaleString()}</strong> excluded providers</div>` : ''}
+        ${state === 'all' ? `<div class="meta-item">${esc(dsState)}</div>` : ''}
+        ${ds.updated_at ? `<div class="meta-item">${ds.updated_at}</div>` : ''}
+        ${ds.frequency  ? `<div class="meta-item">${ds.frequency}</div>` : ''}
+      </div>
+      ${tags ? `<div class="card-tags" style="margin-top:8px">${tags}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // California sector chart
+  let sectorSection = '';
+  if (state === 'California') {
+    sectorSection = `
+      <div style="margin-bottom:24px">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">Exclusions by Sector</div>
+        <div id="bar-ca-sector" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading sector data…</div></div>
+      </div>`;
+    setTimeout(() => {
+      fetch('/api/stats/medicaid-by-sector?dataset=us_ca_med_exclusions')
+        .then(r => r.json()).then(data => {
+          const el = document.getElementById('bar-ca-sector');
+          if (!el) return;
+          el.innerHTML = '';
+          drawBarChart('bar-ca-sector', data.slice(0, 20), '#4f8ef7');
+        });
+    }, 0);
+  }
+
+  return header + sectorSection + cards;
+}
+
+function selectMedicaidState(state) {
+  _selectedMedicaidState = state;
+  const medDatasets = allDatasets.filter(d => (d.tags || []).includes('sector.usmed.debarment'));
+  const byState = {};
+  for (const ds of medDatasets) {
+    const m = ds.name.match(/^us_([a-z]{2})_/);
+    const s = m ? (US_STATE_NAMES[m[1]] || m[1].toUpperCase()) : 'Federal';
+    if (!byState[s]) byState[s] = [];
+    byState[s].push(ds);
+  }
+  // Update active state in left panel
+  document.querySelectorAll('#med-state-list .country-row').forEach(row => {
+    const active = row.dataset.state === state;
+    row.style.background = active ? 'var(--surface2)' : 'transparent';
+    row.style.borderLeft = `3px solid ${active ? 'var(--accent)' : 'transparent'}`;
+    const name = row.querySelector('div > div:first-child');
+    if (name) { name.style.color = active ? 'var(--text)' : 'var(--muted)'; name.style.fontWeight = active ? '600' : '400'; }
+  });
+  const panel = document.getElementById('med-datasets-panel');
+  if (panel) panel.innerHTML = renderMedicaidStateDatasets(state, byState, medDatasets);
+}
+
+function filterMedicaidStates(q) {
+  const lower = q.toLowerCase();
+  document.querySelectorAll('#med-state-list .country-row').forEach(row => {
+    const name = row.querySelector('div > div:first-child');
+    const text = (name?.textContent || '').toLowerCase();
+    row.style.display = text.includes(lower) ? '' : 'none';
+  });
 }
 
 async function loadMedicaidPage(offset) {
@@ -1247,17 +1370,6 @@ async function loadMedicaidPage(offset) {
   }
 }
 
-function medicaidFilter(state) {
-  document.querySelectorAll('.med-filter').forEach(btn => {
-    const active = btn.dataset.state === state;
-    btn.style.background = active ? 'var(--accent)' : 'transparent';
-    btn.style.color = active ? '#fff' : 'var(--muted)';
-    btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
-  });
-  document.querySelectorAll('#med-cards .dataset-card').forEach(card => {
-    card.style.display = (state === 'all' || card.dataset.state === state) ? '' : 'none';
-  });
-}
 
 function filterMedicaidRecords(q) {
   clearTimeout(_medFilterTimer);
