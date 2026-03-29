@@ -322,13 +322,7 @@ async function renderStatsView() {
       <div class="bar-num">${d.entity_count.toLocaleString()}</div>
     </div>`).join('');
 
-  const countryMax = s.top_countries[0]?.[1] || 1;
-  const countryBars = s.top_countries.map(([c, n]) => `
-    <div class="bar-row">
-      <div class="bar-label short">${c}</div>
-      <div class="bar-track"><div class="bar-fill green" style="width:${Math.round(n/countryMax*100)}%"></div></div>
-      <div class="bar-num">${n}</div>
-    </div>`).join('');
+  const countryBarData = s.top_countries.map(([c, n]) => ({ label: c.toUpperCase(), value: n }));
 
   const tagItems = s.top_tags.map(([t, n]) =>
     `<span class="tag-pill" onclick="filterByTag(null,'${t}')">${t} <span class="tag-count">${n}</span></span>`
@@ -355,7 +349,7 @@ async function renderStatsView() {
       </div>
       <div class="chart-card">
         <div class="chart-title">Top Publisher Countries</div>
-        ${countryBars}
+        <div id="bar-countries"></div>
       </div>
     </div>
 
@@ -380,7 +374,8 @@ async function renderStatsView() {
         </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">exclusion % share minus population % share</span></div>
+        <div class="chart-title">Medicaid Offense Rate <span style="font-size:10px;color:var(--muted);font-weight:400">percentage
+        </span></div>
         <div id="pie-medicaid-rate" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div>
         </div>
@@ -421,6 +416,9 @@ async function renderStatsView() {
       drawPieChart('pie-cyber', cyberCountryData.slice(0, 10), CYBER_PIE_COLORS);
     });
   }
+
+  // Publisher countries vertical bar chart
+  drawBarChart('bar-countries', countryBarData, '#3ecf8e');
 
   // PEP bar chart renders immediately (data already computed)
   drawBarChart('bar-pep', pepBarData, '#4f8ef7');
