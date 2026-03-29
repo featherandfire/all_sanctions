@@ -362,7 +362,7 @@ async function renderStatsView() {
         </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">excluded providers per 10,000 residents</span></div>
+        <div class="chart-title">Medicaid Exclusion Rate by State <span style="font-size:10px;color:var(--muted);font-weight:400">blacklisted providers as % of state population</span></div>
         <div id="pie-medicaid-rate" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
           <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div>
         </div>
@@ -601,12 +601,12 @@ function _drawMedicaidRateChart() {
   const popMap = {};
   for (const { label, value } of _statsMeta.popData) popMap[label] = value;
 
-  // Rate = excluded providers per 10,000 residents
+  // Ratio = excluded providers / state population, expressed as a percentage
   const rateData = [];
   for (const [state, excluded] of Object.entries(_statsMeta.medicaidByState)) {
     const pop = popMap[state];
     if (pop && excluded) {
-      rateData.push({ label: state, value: parseFloat(((excluded / pop) * 10000).toFixed(2)) });
+      rateData.push({ label: state, value: parseFloat(((excluded / pop) * 100).toFixed(4)) });
     }
   }
   rateData.sort((a, b) => b.value - a.value);
@@ -619,11 +619,11 @@ function _drawMedicaidRateChart() {
   ];
 
   drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), RATE_COLORS, {
-    unit: 'per 10k',
+    unit: '% of population',
     centerLabel: 'states',
     centerValue: rateData.slice(0, 15).length.toString(),
-    valueFmt: v => v.toFixed(2),
-    legendFmt: v => v.toFixed(2),
+    valueFmt: v => v.toFixed(4) + '%',
+    legendFmt: v => v.toFixed(4) + '%',
   });
 }
 
