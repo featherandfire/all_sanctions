@@ -2044,10 +2044,33 @@ function renderRows(rows) {
         ).join(' ');
         else if ((k === 'currency') && val) cell = `<span style="padding:2px 8px;background:#f6c90e18;color:var(--yellow);border-radius:10px;font-size:11px;font-weight:600">${esc(val)}</span>`;
 
-        return `<td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${cell}</td>`;
+        return `<td onclick="toggleCell(this)" title="${esc(val)}"
+          style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;cursor:pointer;transition:background .1s"
+          onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${cell}</td>`;
       }).join('')}
     </tr>`;
   }).join('');
+}
+
+function toggleCell(td) {
+  const expanded = td.dataset.expanded === '1';
+  if (expanded) {
+    td.style.maxWidth = '240px';
+    td.style.overflow = 'hidden';
+    td.style.textOverflow = 'ellipsis';
+    td.style.whiteSpace = 'nowrap';
+    td.style.wordBreak = '';
+    td.style.background = '';
+    td.dataset.expanded = '';
+  } else {
+    td.style.maxWidth = '520px';
+    td.style.overflow = 'visible';
+    td.style.textOverflow = 'clip';
+    td.style.whiteSpace = 'pre-wrap';
+    td.style.wordBreak = 'break-word';
+    td.style.background = 'var(--surface2)';
+    td.dataset.expanded = '1';
+  }
 }
 
 let _sortCol = null;
