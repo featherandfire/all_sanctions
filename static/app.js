@@ -267,15 +267,7 @@ async function renderStatsView() {
     _statsMeta = { s, cyberData };
   }
 
-  // ── Cyber records by country (pie data) ──────────────────────────────────
-  const cyberByCountry = {};
-  for (const ds of cyberData.datasets) {
-    const label = ds.publisher_country_label || ds.publisher_country || 'International';
-    cyberByCountry[label] = (cyberByCountry[label] || 0) + (ds.entity_count || 0);
-  }
-  const cyberPieData = Object.entries(cyberByCountry)
-    .sort((a, b) => b[1] - a[1]).slice(0, 12)
-    .map(([label, value]) => ({ label, value }));
+  // Cyber by country pie loads async from entity-level scan (see bottom of function)
 
   // ── Medicaid records by US state (pie data) ──────────────────────────────
   const medicaidByState = {};
@@ -352,10 +344,12 @@ async function renderStatsView() {
     <div class="charts-row">
       <div class="chart-card">
         <div class="chart-title">Cyber &amp; Crypto Records by Country</div>
-        <div id="pie-cyber" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap"></div>
+        <div id="pie-cyber" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+          <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading entity data…</div>
+        </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Medicaid Excluded Providers by US State</div>
+        <div class="chart-title">Blacklisted Medicaid providers by US State</div>
         <div id="pie-medicaid" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap"></div>
       </div>
     </div>
@@ -394,8 +388,21 @@ async function renderStatsView() {
     </div>
   `;
 
-  drawPieChart('pie-cyber', cyberPieData, ['#f6c90e','#f56565','#a78bfa','#4f8ef7','#3ecf8e','#fb923c','#64748b','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8']);
   drawPieChart('pie-medicaid', medicaidPieData, ['#4f8ef7','#3ecf8e','#f6c90e','#f56565','#a78bfa','#fb923c','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b','#fbbf24','#c084fc','#86efac']);
+
+  // Cyber by country — entity-level scan across all crypto datasets (async, slow on first load)
+  const CYBER_PIE_COLORS = ['#f6c90e','#f56565','#a78bfa','#4f8ef7','#3ecf8e','#fb923c','#64748b','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8'];
+  if (_statsMeta.cyberCountryData) {
+    drawPieChart('pie-cyber', _statsMeta.cyberCountryData, CYBER_PIE_COLORS);
+  } else {
+    fetch('/api/stats/crypto-by-country').then(r => r.json()).then(cyberCountryData => {
+      _statsMeta.cyberCountryData = cyberCountryData;
+      const el = document.getElementById('pie-cyber');
+      if (!el) return;
+      el.innerHTML = '';
+      drawPieChart('pie-cyber', cyberCountryData, CYBER_PIE_COLORS);
+    });
+  }
 
   // PEP bar chart renders immediately (data already computed)
   drawBarChart('bar-pep', pepBarData, '#4f8ef7');

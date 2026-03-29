@@ -6,7 +6,7 @@ Constants: CYBER_TITLE_KEYWORDS, CYBER_DESC_KEYWORDS, CYBER_TAGS, CYBER_NAME_ALL
 """
 
 from flask import Blueprint, jsonify, request
-from data import fetch_index, visible_datasets, serialize_dataset, _get_entities
+from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch
 
 cyber_bp = Blueprint("cyber_bp", __name__)
 
@@ -175,6 +175,52 @@ _COUNTRY_NAMES = {
     "uz":"Uzbekistan","ve":"Venezuela","vn":"Vietnam","ye":"Yemen","zw":"Zimbabwe",
     "kn":"Saint Kitts & Nevis",
 }
+
+
+@cyber_bp.route("/api/stats/crypto-by-country")
+def api_crypto_by_country():
+    """
+    Crypto wallet / address records grouped by entity nationality across ALL
+    scanned datasets. For each dataset, cross-references wallet holder names
+    against Person/Org entities in the same dataset to derive country.
+    """
+    batch = _get_entities_batch(CRYPTO_SCAN_DATASETS)
+
+    country_counts = {}
+    for ds_name in CRYPTO_SCAN_DATASETS:
+        rows = batch.get(ds_name, [])
+
+        # Build name → country from Person/Org entities in this dataset
+        name_to_country = {}
+        for row in rows:
+            if row.get("schema") in ("Person", "Organization", "Company", "LegalEntity"):
+                name = (row.get("caption") or "").strip().lower()
+                country = (
+                    row.get("nationality") or
+                    row.get("countries") or
+                    row.get("sanction_country") or ""
+                )
+                if name and country:
+                    name_to_country[name] = country.split(";")[0].strip().lower()
+
+        for row in rows:
+            if not _is_crypto_entity(row):
+                continue
+            holder = (row.get("holder") or "").strip().lower()
+            country = (
+                name_to_country.get(holder) or
+                (row.get("countries") or "").split(";")[0].strip().lower() or
+                (row.get("nationality") or "").split(";")[0].strip().lower() or
+                (row.get("sanction_country") or "").split(";")[0].strip().lower() or
+                "unknown"
+            )
+            country_counts[country] = country_counts.get(country, 0) + 1
+
+    ranked = sorted(country_counts.items(), key=lambda x: -x[1])[:20]
+    return jsonify([
+        {"label": _COUNTRY_NAMES.get(c, c.title()) if c != "unknown" else "Unknown", "value": n}
+        for c, n in ranked
+    ])
 
 
 @cyber_bp.route("/api/stats/sdn-crypto-country")
