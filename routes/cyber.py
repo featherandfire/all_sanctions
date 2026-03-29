@@ -173,52 +173,70 @@ _COUNTRY_NAMES = {
     "th":"Thailand","tn":"Tunisia","tr":"Turkey","tm":"Turkmenistan","ug":"Uganda",
     "ua":"Ukraine","ae":"UAE","gb":"United Kingdom","us":"United States",
     "uz":"Uzbekistan","ve":"Venezuela","vn":"Vietnam","ye":"Yemen","zw":"Zimbabwe",
-    "kn":"Saint Kitts & Nevis",
+    "kn":"Saint Kitts & Nevis","ee":"Estonia","lv":"Latvia","ie":"Ireland",
+    "vc":"Saint Vincent","dm":"Dominica","ag":"Antigua","lc":"Saint Lucia",
+    "ky":"Cayman Islands","bm":"Bermuda","vg":"British Virgin Islands",
+    "pa":"Panama","li":"Liechtenstein","mc":"Monaco","sm":"San Marino",
+    "cv":"Cape Verde","mz":"Mozambique","rw":"Rwanda","ci":"Ivory Coast",
+    "cm":"Cameroon","sn":"Senegal","tz":"Tanzania","zm":"Zambia",
+    "ht":"Haiti","cr":"Costa Rica","ec":"Ecuador","uy":"Uruguay",
+    "py":"Paraguay","bo":"Bolivia","sr":"Suriname","tt":"Trinidad & Tobago",
+    "bb":"Barbados","bs":"Bahamas","jm":"Jamaica",
 }
+
+
+def _entity_country(row):
+    """Best-effort country code from a flattened entity record."""
+    for field in ("nationality", "countries", "jurisdiction", "registrationCountry", "country"):
+        val = row.get(field, "")
+        if val:
+            return val.split(";")[0].strip().lower()
+    return ""
 
 
 @cyber_bp.route("/api/stats/crypto-by-country")
 def api_crypto_by_country():
     """
-    Crypto wallet / address records grouped by entity nationality across ALL
-    scanned datasets. For each dataset, cross-references wallet holder names
-    against Person/Org entities in the same dataset to derive country.
+    Count sanctioned entities WITH cryptocurrency addresses, grouped by country.
+    Strategy:
+      1. For each dataset, index all Person/Org entities by name → country.
+      2. For each CryptoWallet, find the holder entity's country via that index.
+      3. Also count any non-wallet entity that directly carries publicKey/currency fields.
+    Only returns countries that could be resolved (skips unattributed records).
     """
     batch = _get_entities_batch(CRYPTO_SCAN_DATASETS)
 
     country_counts = {}
+
     for ds_name in CRYPTO_SCAN_DATASETS:
         rows = batch.get(ds_name, [])
 
-        # Build name → country from Person/Org entities in this dataset
+        # Index name → country for every Person/Org in this dataset
         name_to_country = {}
         for row in rows:
-            if row.get("schema") in ("Person", "Organization", "Company", "LegalEntity"):
-                name = (row.get("caption") or "").strip().lower()
-                country = (
-                    row.get("nationality") or
-                    row.get("countries") or
-                    row.get("sanction_country") or ""
-                )
-                if name and country:
-                    name_to_country[name] = country.split(";")[0].strip().lower()
+            if row.get("schema") not in ("Person", "Organization", "Company", "LegalEntity"):
+                continue
+            name = (row.get("caption") or "").strip().lower()
+            country = _entity_country(row)
+            if name and country:
+                name_to_country[name] = country
 
         for row in rows:
             if not _is_crypto_entity(row):
                 continue
-            holder = (row.get("holder") or "").strip().lower()
-            country = (
-                name_to_country.get(holder) or
-                (row.get("countries") or "").split(";")[0].strip().lower() or
-                (row.get("nationality") or "").split(";")[0].strip().lower() or
-                (row.get("sanction_country") or "").split(";")[0].strip().lower() or
-                "unknown"
-            )
-            country_counts[country] = country_counts.get(country, 0) + 1
+
+            # Prefer the entity's own country fields; fall back to holder lookup
+            country = _entity_country(row)
+            if not country:
+                holder = (row.get("holder") or "").strip().lower()
+                country = name_to_country.get(holder, "")
+
+            if country:  # skip unresolvable records — they'd swamp the chart as "Unknown"
+                country_counts[country] = country_counts.get(country, 0) + 1
 
     ranked = sorted(country_counts.items(), key=lambda x: -x[1])[:20]
     return jsonify([
-        {"label": _COUNTRY_NAMES.get(c, c.title()) if c != "unknown" else "Unknown", "value": n}
+        {"label": _COUNTRY_NAMES.get(c, c.upper()), "value": n}
         for c, n in ranked
     ])
 
