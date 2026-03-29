@@ -1240,13 +1240,17 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
     </div>`;
   }).join('');
 
-  // California sector chart
+  // California sector + zip charts
   let sectorSection = '';
   if (state === 'California') {
     sectorSection = `
       <div style="margin-bottom:24px">
         <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">Exclusions by Sector</div>
-        <div id="bar-ca-sector" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading sector data…</div></div>
+        <div id="bar-ca-sector" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div></div>
+      </div>
+      <div style="margin-bottom:24px">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">Exclusions by Zip Code <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
+        <div id="bar-ca-zip" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div></div>
       </div>`;
     setTimeout(() => {
       fetch('/api/stats/medicaid-by-sector?dataset=us_ca_med_exclusions')
@@ -1255,6 +1259,13 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           if (!el) return;
           el.innerHTML = '';
           drawBarChart('bar-ca-sector', data.slice(0, 20), '#4f8ef7');
+        });
+      fetch('/api/stats/medicaid-by-zipcode?dataset=us_ca_med_exclusions')
+        .then(r => r.json()).then(data => {
+          const el = document.getElementById('bar-ca-zip');
+          if (!el) return;
+          el.innerHTML = '';
+          drawBarChart('bar-ca-zip', data.slice(0, 20), '#3ecf8e');
         });
     }, 0);
   }

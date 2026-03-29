@@ -166,6 +166,25 @@ def api_pep_records():
     return _build_record_list("list.pep", ds_names)
 
 
+@datasets_bp.route("/api/stats/medicaid-by-zipcode")
+def api_medicaid_by_zipcode():
+    """Zip code breakdown for a Medicaid dataset (default: us_ca_med_exclusions)."""
+    import re
+    ds_name = request.args.get("dataset", "us_ca_med_exclusions")
+    entities = _get_entities(ds_name)
+    counts = {}
+    for row in entities:
+        m = re.search(r'\b(\d{5})(?:-\d{4})?\b', row.get("address") or "")
+        if m:
+            z = m.group(1)
+            counts[z] = counts.get(z, 0) + 1
+    data = sorted(
+        [{"label": k, "value": v} for k, v in counts.items()],
+        key=lambda x: -x["value"]
+    )
+    return jsonify(data)
+
+
 @datasets_bp.route("/api/stats/medicaid-by-sector")
 def api_medicaid_by_sector():
     """Sector breakdown for a Medicaid dataset (default: us_ca_med_exclusions)."""
