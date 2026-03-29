@@ -21,6 +21,24 @@ const US_STATE_NAMES = {
   wa:'Washington', wi:'Wisconsin', wv:'West Virginia', wy:'Wyoming',
 };
 
+// Deterministic HSL color per state — same state = same color across every chart
+const STATE_COLOR_MAP = (() => {
+  const names = Object.values(US_STATE_NAMES).sort();
+  const map = { Federal: '#94a3b8' };
+  names.forEach((s, i) => {
+    const h = Math.round((i / names.length) * 360);
+    map[s] = `hsl(${h},62%,54%)`;
+  });
+  return map;
+})();
+
+// Deterministic color from any string (used for country names in cyber chart)
+function _hashColor(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  return `hsl(${Math.abs(h) % 360},62%,54%)`;
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -388,19 +406,23 @@ async function renderStatsView() {
     </div>
   `;
 
-  drawPieChart('pie-medicaid', medicaidPieData, ['#4f8ef7','#3ecf8e','#f6c90e','#f56565','#a78bfa','#fb923c','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b','#fbbf24','#c084fc','#86efac']);
+  drawPieChart('pie-medicaid', medicaidPieData, null, { colorMap: STATE_COLOR_MAP });
 
   // Cyber by country — entity-level scan across all crypto datasets (async, slow on first load)
-  const CYBER_PIE_COLORS = ['#f6c90e','#f56565','#a78bfa','#4f8ef7','#3ecf8e','#fb923c','#64748b','#e879f9','#34d399','#60a5fa','#f97316','#94a3b8'];
+  function _buildCyberColorMap(data) {
+    const m = {};
+    data.forEach(d => { m[d.label] = _hashColor(d.label); });
+    return m;
+  }
   if (_statsMeta.cyberCountryData) {
-    drawPieChart('pie-cyber', _statsMeta.cyberCountryData, CYBER_PIE_COLORS);
+    drawPieChart('pie-cyber', _statsMeta.cyberCountryData, null, { colorMap: _buildCyberColorMap(_statsMeta.cyberCountryData), coloredLabels: true });
   } else {
     fetch('/api/stats/crypto-by-country').then(r => r.json()).then(cyberCountryData => {
       _statsMeta.cyberCountryData = cyberCountryData;
       const el = document.getElementById('pie-cyber');
       if (!el) return;
       el.innerHTML = '';
-      drawPieChart('pie-cyber', cyberCountryData, CYBER_PIE_COLORS);
+      drawPieChart('pie-cyber', cyberCountryData, null, { colorMap: _buildCyberColorMap(cyberCountryData), coloredLabels: true });
     });
   }
 
@@ -421,19 +443,14 @@ async function renderStatsView() {
   }
 
   // US population by state pie chart (Census API, cached after first load)
-  const POP_COLORS = [
-    '#4f8ef7','#3ecf8e','#f6c90e','#f56565','#a78bfa','#fb923c',
-    '#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b',
-    '#fbbf24','#c084fc','#86efac','#38bdf8',
-  ];
   if (_statsMeta.popData) {
-    drawPieChart('pie-population', _statsMeta.popData.slice(0, 15), POP_COLORS);
+    drawPieChart('pie-population', _statsMeta.popData.slice(0, 15), null, { colorMap: STATE_COLOR_MAP });
     _drawMedicaidRateChart();
   } else {
     fetch('/api/stats/population-by-state').then(r => r.json()).then(popData => {
       _statsMeta.popData = popData;
       const popEl = document.getElementById('pie-population');
-      if (popEl) { popEl.innerHTML = ''; drawPieChart('pie-population', popData.slice(0, 15), POP_COLORS); }
+      if (popEl) { popEl.innerHTML = ''; drawPieChart('pie-population', popData.slice(0, 15), null, { colorMap: STATE_COLOR_MAP }); }
       _drawMedicaidRateChart();
     });
   }
@@ -507,21 +524,28 @@ function drawBarChart(containerId, data, color) {
   }
 }
 
-// opts: { unit, centerLabel, centerValue, valueFmt, legendFmt }
-//   unit        — word after the value in the tooltip  (default: 'entities')
-//   centerLabel — small text below the center number   (default: 'entities')
-//   centerValue — override the center big number text  (default: formatted total)
-//   valueFmt    — fn(value) for tooltip value display  (default: toLocaleString)
-//   legendFmt   — fn(value, pct) for legend right col  (default: pct + '%')
+// opts: { unit, centerLabel, centerValue, valueFmt, legendFmt, colorMap, coloredLabels }
+//   unit          — word after the value in the tooltip  (default: 'entities')
+//   centerLabel   — small text below the center number   (default: 'entities')
+//   centerValue   — override the center big number text  (default: formatted total)
+//   valueFmt      — fn(value) for tooltip value display  (default: toLocaleString)
+//   legendFmt     — fn(value, pct) for legend right col  (default: pct + '%')
+//   colorMap      — {label: color} overrides indexed colors array per label
+//   coloredLabels — if true, legend label text is colored with the slice color
 function drawPieChart(containerId, data, colors, opts) {
   const container = document.getElementById(containerId);
   if (!container || !data.length) return;
 
-  const unit        = (opts && opts.unit)        || 'entities';
-  const centerLabel = (opts && opts.centerLabel) || 'entities';
-  const centerValue = (opts && opts.centerValue) || null;
-  const valueFmt    = (opts && opts.valueFmt)    || (v => v.toLocaleString());
-  const legendFmt   = (opts && opts.legendFmt)   || ((_v, pct) => pct + '%');
+  const unit          = (opts && opts.unit)          || 'entities';
+  const centerLabel   = (opts && opts.centerLabel)   || 'entities';
+  const centerValue   = (opts && opts.centerValue)   || null;
+  const valueFmt      = (opts && opts.valueFmt)      || (v => v.toLocaleString());
+  const legendFmt     = (opts && opts.legendFmt)     || ((_v, pct) => pct + '%');
+  const colorMap      = (opts && opts.colorMap)      || null;
+  const coloredLabels = (opts && opts.coloredLabels) || false;
+
+  // Resolve color for a data point — colorMap takes priority over indexed array
+  const getColor = (label, i) => (colorMap && colorMap[label]) || (colors && colors[i % colors.length]) || _hashColor(label);
 
   const size = 220;
   const radius = size / 2 - 8;
@@ -552,7 +576,7 @@ function drawPieChart(containerId, data, colors, opts) {
     .data(pie(data))
     .enter().append('path')
     .attr('d', arc)
-    .attr('fill', (_, i) => colors[i % colors.length])
+    .attr('fill', (d, i) => getColor(d.data.label, i))
     .attr('stroke', '#0d0f14').attr('stroke-width', 1.5)
     .style('cursor', 'pointer')
     .on('mousemove', function(event, d) {
@@ -584,11 +608,12 @@ function drawPieChart(containerId, data, colors, opts) {
     .attr('style', 'flex:1;min-width:120px;display:flex;flex-direction:column;gap:5px;padding-top:6px;max-height:220px;overflow-y:auto');
 
   data.forEach((d, i) => {
-    const pct = ((d.value / total) * 100).toFixed(1);
+    const pct   = ((d.value / total) * 100).toFixed(1);
+    const color = getColor(d.label, i);
     legend.append('div')
       .attr('style', 'display:flex;align-items:center;gap:7px;font-size:11px;color:#e2e8f0;cursor:default')
-      .html(`<span style="width:10px;height:10px;border-radius:2px;background:${colors[i % colors.length]};flex-shrink:0"></span>
-             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.label)}">${esc(d.label)}</span>
+      .html(`<span style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0"></span>
+             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${coloredLabels ? `color:${color}` : ''}" title="${esc(d.label)}">${esc(d.label)}</span>
              <span style="color:#64748b;flex-shrink:0">${legendFmt(d.value, pct)}</span>`);
   });
 }
@@ -619,13 +644,8 @@ function _drawMedicaidRateChart() {
   rateData.sort((a, b) => b.value - a.value);
 
   el.innerHTML = '';
-  const RATE_COLORS = [
-    '#f56565','#fb923c','#f6c90e','#3ecf8e','#4f8ef7','#a78bfa',
-    '#e879f9','#34d399','#60a5fa','#f97316','#94a3b8','#64748b',
-    '#fbbf24','#c084fc','#86efac',
-  ];
-
-  drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), RATE_COLORS, {
+  drawPieChart('pie-medicaid-rate', rateData.slice(0, 15), null, {
+    colorMap: STATE_COLOR_MAP,
     unit: 'pp over population share',
     centerLabel: 'states',
     centerValue: rateData.slice(0, 15).length.toString(),
