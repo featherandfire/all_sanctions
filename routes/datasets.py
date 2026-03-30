@@ -314,6 +314,18 @@ def _medicaid_counts(keys_fn):
     ))
 
 
+@datasets_bp.route("/api/stats/medicaid-date-coverage")
+def api_medicaid_date_coverage():
+    """Check how many records have each date field populated."""
+    rows = _medicaid_entities()
+    total = len(rows)
+    fields = ['first_seen', 'last_seen', 'last_change', 'sanction_startDate', 'sanction_listingDate']
+    return jsonify({
+        "total": total,
+        "coverage": {f: sum(1 for r in rows if r.get(f)) for f in fields}
+    })
+
+
 @datasets_bp.route("/api/stats/medicaid-by-zipcode")
 def api_medicaid_by_zipcode():
     """Zip code breakdown across one or more Medicaid datasets."""
