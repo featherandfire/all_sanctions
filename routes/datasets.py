@@ -286,6 +286,20 @@ def _medicaid_entities(default="us_ca_med_exclusions"):
     return rows
 
 
+_SECTOR_ALIASES = {
+    'rn':                      'Registered Nurse',
+    'lvn':                     'Licensed Vocational Nurse',
+    'licensed vocational nurse': 'Licensed Vocational Nurse',
+    'md':                      'Medical Doctor',
+    'medical doctor':          'Medical Doctor',
+    'dds':                     'Dentist',
+    'dentist':                 'Dentist',
+}
+
+def _normalize_sector(s):
+    return _SECTOR_ALIASES.get(s.strip().lower(), s.strip())
+
+
 def _medicaid_counts(keys_fn):
     """Aggregate medicaid entities via a per-row key extractor and return a sorted label/value list."""
     counts = Counter()
@@ -321,7 +335,7 @@ def api_medicaid_by_schema():
 def api_medicaid_by_sector():
     """Sector breakdown across one or more Medicaid datasets."""
     return _medicaid_counts(
-        lambda r: [p.strip() for p in (r.get("sector") or r.get("position") or r.get("title") or "").split(",")]
+        lambda r: [_normalize_sector(p) for p in (r.get("sector") or r.get("position") or r.get("title") or "").split(",")]
     )
 
 
@@ -337,7 +351,7 @@ def api_medicaid_top_sector_cities():
     for row in rows:
         raw = row.get("sector") or row.get("position") or row.get("title") or ""
         for part in raw.split(","):
-            part = part.strip()
+            part = _normalize_sector(part)
             if part:
                 if part not in sector_rows:
                     sector_rows[part] = []
