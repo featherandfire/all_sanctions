@@ -294,6 +294,7 @@ _SECTOR_ALIASES = {
     'medical doctor':          'Medical Doctor',
     'dds':                     'Dentist',
     'dentist':                 'Dentist',
+    'pca':                     'Personal Care Assistant',
 }
 
 def _normalize_sector(s):
