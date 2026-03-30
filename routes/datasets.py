@@ -326,6 +326,21 @@ def api_medicaid_date_coverage():
     })
 
 
+@datasets_bp.route("/api/stats/medicaid-by-year")
+def api_medicaid_by_year():
+    """Exclusion counts grouped by year of first_seen."""
+    counts = Counter()
+    for row in _medicaid_entities():
+        val = row.get("first_seen") or ""
+        year = val[:4]
+        if year.isdigit() and 2000 <= int(year) <= 2100:
+            counts[year] += 1
+    return jsonify(sorted(
+        [{"label": k, "value": v} for k, v in counts.items()],
+        key=lambda x: x["label"]
+    ))
+
+
 @datasets_bp.route("/api/stats/medicaid-by-zipcode")
 def api_medicaid_by_zipcode():
     """Zip code breakdown across one or more Medicaid datasets."""

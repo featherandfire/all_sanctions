@@ -248,6 +248,10 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div class="med-chart-label">Top Offenses by State</div>
           <div id="bar-all-states"></div>
         </div>
+        <div id="med-cell-year-all" style="grid-column:1/-1">
+          <div class="med-chart-label">Exclusions by Year <span style="font-weight:400;color:var(--muted)">(first seen)</span></div>
+          <div id="bar-all-year"></div>
+        </div>
       </div>`;
     setTimeout(() => {
       fetch(`/api/stats/medicaid-by-sector?datasets=${encodeURIComponent(dsParam)}`)
@@ -289,6 +293,12 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
       if (document.getElementById('bar-all-states') && stateBarData.length) {
         drawBarChart('bar-all-states', stateBarData, '#4f8ef7');
       }
+      fetch(`/api/stats/medicaid-by-year?datasets=${encodeURIComponent(dsParam)}`)
+        .then(r => r.json()).then(data => {
+          const el = document.getElementById('bar-all-year');
+          if (!el || !data.length) return;
+          drawBarChart('bar-all-year', data, 'var(--green)');
+        });
     }, 0);
   } else {
     const dsParam = (byState[state] || []).map(d => d.name).join(',');
