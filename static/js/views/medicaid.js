@@ -292,7 +292,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           drawStackedBarChart('bar-all-states', sectors, states);
           const legendEl = document.getElementById('bar-all-states-legend');
           if (legendEl) {
-            const COLORS = ['#4f8ef7', '#3ecf8e', '#f6c90e', '#7c5cbf', '#f56565', '#64748b'];
+            const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#64748b'];
             legendEl.innerHTML = sectors.map((s, i) =>
               `<span style="display:flex;align-items:center;gap:5px">
                 <span style="width:10px;height:10px;border-radius:2px;background:${COLORS[i]};flex-shrink:0"></span>
