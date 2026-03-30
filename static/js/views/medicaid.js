@@ -244,6 +244,10 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
           <div id="pie-all-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
         </div>
+        <div id="med-cell-state-all" style="grid-column:1/-1">
+          <div class="med-chart-label">Top Offenses by State</div>
+          <div id="bar-all-states"></div>
+        </div>
       </div>`;
     setTimeout(() => {
       fetch(`/api/stats/medicaid-by-sector?datasets=${encodeURIComponent(dsParam)}`)
@@ -276,6 +280,14 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
             legendFmt: (_v, pct) => pct + '%',
           });
         });
+      const stateBarData = Object.entries(byState)
+        .map(([s, dsList]) => ({ label: s, value: dsList.reduce((sum, d) => sum + (d.target_count || 0), 0) }))
+        .filter(d => d.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 25);
+      if (document.getElementById('bar-all-states') && stateBarData.length) {
+        drawHorizontalBarChart('bar-all-states', stateBarData, 'var(--accent)');
+      }
     }, 0);
   } else {
     const dsParam = (byState[state] || []).map(d => d.name).join(',');
