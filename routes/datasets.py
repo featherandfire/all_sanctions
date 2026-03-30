@@ -401,7 +401,7 @@ def api_medicaid_state_sectors():
         states_data.append(entry)
 
     states_data.sort(key=lambda x: -x["total"])
-    return jsonify({"sectors": keys, "states": states_data[:25]})
+    return jsonify({"sectors": keys, "states": states_data[:20]})
 
 
 @datasets_bp.route("/api/stats/medicaid-by-zipcode")
