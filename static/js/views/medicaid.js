@@ -226,9 +226,42 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
     </div>`;
   }).join('');
 
-  // Per-state pie charts — shown for any single state
+  // Sector pie chart — shown for all states and per-state
   let sectorSection = '';
-  if (state !== 'all') {
+  if (state === 'all') {
+    const dsParam = medDatasets.map(d => d.name).join(',');
+    _medicaidDsParam = dsParam;
+    const targets = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
+    const centerVal = targets >= 1000 ? (targets / 1000).toFixed(1) + 'k' : targets.toLocaleString();
+    sectorSection = `
+      <div id="med-sector-grid" class="med-sector-grid" style="margin-bottom:24px">
+        <div id="med-cell-sector-all">
+          <div class="med-chart-label">Offenses by Sector <span style="font-weight:400;color:var(--muted)">(All States)</span></div>
+          <div id="pie-all-sector" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+          <div id="pie-all-sector-footnote" style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5"></div>
+        </div>
+      </div>`;
+    setTimeout(() => {
+      fetch(`/api/stats/medicaid-by-sector?datasets=${encodeURIComponent(dsParam)}`)
+        .then(r => r.json()).then(data => {
+          const el = document.getElementById('pie-all-sector');
+          if (!el) return;
+          if (!data.length) { document.getElementById('med-cell-sector-all')?.remove(); return; }
+          el.innerHTML = '';
+          const sliced = data.slice(0, 20);
+          const colors = _hslGradient(sliced.length);
+          drawPieChart('pie-all-sector', sliced, colors, {
+            unit: 'records',
+            centerValue: centerVal,
+            centerLabel: data.length + ' sectors',
+            totalOverride: targets,
+            legendFmt: (_v, pct) => pct + '%',
+          });
+          const fn = document.getElementById('pie-all-sector-footnote');
+          if (fn && data.length > sliced.length) fn.textContent = `** Showing top 20 of ${data.length} sectors`;
+        });
+    }, 0);
+  } else {
     const dsParam = (byState[state] || []).map(d => d.name).join(',');
     sectorSection = `
       <div id="med-sector-grid" class="med-sector-grid">
