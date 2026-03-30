@@ -19,9 +19,24 @@ async function loadDatasets() {
   allDatasets = await res.json();
 }
 
+// ── Mobile sidebar ────────────────────────────────────────────────────────
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const open = sidebar.classList.toggle('open');
+  backdrop.classList.toggle('show', open);
+}
+
+function _closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+
 // ── View switching ────────────────────────────────────────────────────────
 
 function switchView(view) {
+  _closeSidebar();
   currentView = view;
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
