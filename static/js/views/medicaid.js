@@ -280,13 +280,14 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
             legendFmt: (_v, pct) => pct + '%',
           });
         });
+      const _stateAbbrMap = Object.fromEntries(Object.entries(US_STATE_NAMES).map(([k, v]) => [v, k.toUpperCase()]));
       const stateBarData = Object.entries(byState)
-        .map(([s, dsList]) => ({ label: s, value: dsList.reduce((sum, d) => sum + (d.target_count || 0), 0) }))
+        .map(([s, dsList]) => ({ label: _stateAbbrMap[s] || s, value: dsList.reduce((sum, d) => sum + (d.target_count || 0), 0) }))
         .filter(d => d.value > 0)
         .sort((a, b) => b.value - a.value)
         .slice(0, 25);
       if (document.getElementById('bar-all-states') && stateBarData.length) {
-        drawHorizontalBarChart('bar-all-states', stateBarData, 'var(--accent)');
+        drawHorizontalBarChart('bar-all-states', stateBarData, 'var(--accent)', { marginLeft: 40 });
       }
     }, 0);
   } else {

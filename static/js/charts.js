@@ -71,12 +71,12 @@ function drawBarChart(containerId, data, color) {
   }
 }
 
-function drawHorizontalBarChart(containerId, data, color) {
+function drawHorizontalBarChart(containerId, data, color, opts = {}) {
   const container = document.getElementById(containerId);
   if (!container || !data.length) return;
 
   const barH    = 26;
-  const margin  = { top: 8, right: 60, bottom: 8, left: 180 };
+  const margin  = { top: 8, right: 60, bottom: 8, left: opts.marginLeft ?? 180 };
   const totalW  = container.clientWidth || 520;
   const w       = totalW - margin.left - margin.right;
   const totalH  = data.length * barH + margin.top + margin.bottom;
