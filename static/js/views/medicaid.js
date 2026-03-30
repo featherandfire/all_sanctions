@@ -2,13 +2,87 @@ let _medicaidTab = 'datasets';
 let _medicaidStateFilter = null;
 let _selectedMedicaidState = 'all';
 let _medFilterTimer = null;
+let _medicaidDsParam = '';
+let _medColFilters = {};
+
+function _removeMedCell(id) {
+  document.getElementById(id)?.remove();
+  const grid = document.getElementById('med-sector-grid');
+  if (grid && !grid.children.length) grid.remove();
+}
+
+function _loadSectorZip(sector) {
+  const el = document.getElementById('pie-state-topsector-zip');
+  const lbl = document.getElementById('pie-state-topsector-label');
+  if (!el) return;
+  el.innerHTML = '<div class="med-placeholder-text">Loading…</div>';
+  const url = `/api/stats/medicaid-top-sector-cities?datasets=${encodeURIComponent(_medicaidDsParam)}${sector ? `&sector=${encodeURIComponent(sector)}` : ''}`;
+  fetch(url).then(r => r.json()).then(({ sector: s, data }) => {
+    if (!document.getElementById('pie-state-topsector-zip')) return;
+    if (!data || !data.length) {
+      _removeMedCell('med-cell-sectorzip');
+      return;
+    }
+    el.innerHTML = '';
+    if (lbl) lbl.textContent = `— ${s}`;
+    document.querySelectorAll('.sector-chip').forEach(c => {
+      const isActive = c.dataset.sector === s;
+      c.style.color = isActive ? 'var(--accent)' : 'var(--muted)';
+      c.style.fontWeight = isActive ? '700' : '500';
+      c.style.borderBottom = isActive ? '2px solid var(--accent)' : '2px solid transparent';
+    });
+
+    // Insight lines above the chart
+    const insightEl = document.getElementById('pie-state-topsector-insight');
+    const acronym = s.split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 5);
+
+    function setInsight(d) {
+      if (!insightEl) return;
+      const pct = ((d.value / d.city_total) * 100).toFixed(1);
+      insightEl.innerHTML = `
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${d.value.toLocaleString()} records</div>
+        <div style="font-size:12px;color:var(--muted)">${pct}% of ${esc(d.label)} records are ${esc(acronym)}***</div>`;
+    }
+
+    if (insightEl) {
+      if (data.length) setInsight(data[0]);
+      else insightEl.innerHTML = '';
+    }
+
+    const sliced = data.slice(0, 10);
+    const zipColors = sliced.map((_, i) => {
+      const t = sliced.length <= 1 ? 0 : i / (sliced.length - 1);
+      return `hsl(${Math.round(t * 50)}, 88%, 52%)`;
+    });
+    drawPieChart('pie-state-topsector-zip', sliced, zipColors, {
+      unit: 'records',
+      centerLabel: 'cities',
+      legendFmt: (_v, pct) => pct + '%',
+      pctFn: d => (d.value / d.city_total) * 100,
+      onHover: d => setInsight(d),
+      onLeave: () => { if (data.length) setInsight(data[0]); },
+    });
+  });
+}
+
+function renderMedicaidStatStrip(state, byState, medDatasets, totalStates) {
+  const dsList = state === 'all' ? medDatasets : (byState[state] || []);
+  const entities = dsList.reduce((s, d) => s + (d.entity_count || 0), 0);
+  const targets  = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
+  const statesVal = state === 'all' ? totalStates : 1;
+  return `
+    <div class="stats-grid" style="margin-bottom:20px">
+      <div class="stat-card"><div class="stat-label">Datasets</div><div class="stat-value accent">${dsList.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Total International References</div><div class="stat-value red">${entities.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-label">Records in Current Dataset</div><div class="stat-value">${targets.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-label">States</div><div class="stat-value">${statesVal}</div></div>
+    </div>`;
+}
 
 async function renderMedicaidView(tab) {
   if (tab) _medicaidTab = tab;
   const content = document.getElementById('content');
   const medDatasets = allDatasets.filter(d => (d.tags || []).includes('sector.usmed.debarment'));
-  const totalEntities = medDatasets.reduce((s, d) => s + (d.entity_count || 0), 0);
-  const totalTargets  = medDatasets.reduce((s, d) => s + (d.target_count || 0), 0);
 
   // Group by state
   const byState = {};
@@ -23,18 +97,13 @@ async function renderMedicaidView(tab) {
   );
 
   const tabBar = `
-    <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:1px solid var(--border)">
-      <button onclick="renderMedicaidView('datasets')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_medicaidTab==='datasets'?'var(--accent)':'transparent'};background:none;color:${_medicaidTab==='datasets'?'var(--accent)':'var(--muted)'};cursor:pointer;font-weight:${_medicaidTab==='datasets'?'600':'400'}">Datasets</button>
-      <button onclick="renderMedicaidView('records')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_medicaidTab==='records'?'var(--accent)':'transparent'};background:none;color:${_medicaidTab==='records'?'var(--accent)':'var(--muted)'};cursor:pointer;font-weight:${_medicaidTab==='records'?'600':'400'}">Records</button>
+    <div class="med-tab-bar">
+      <button onclick="renderMedicaidView('datasets')" class="med-tab-btn${_medicaidTab==='datasets'?' active':''}">Datasets</button>
+      <button onclick="renderMedicaidView('records')" class="med-tab-btn${_medicaidTab==='records'?' active':''}">Records</button>
+      <button onclick="renderMedicaidView('nppes')" class="med-tab-btn${_medicaidTab==='nppes'?' active':''}">NPPES</button>
     </div>`;
 
-  const statStrip = `
-    <div class="stats-grid" style="margin-bottom:20px">
-      <div class="stat-card"><div class="stat-label">Datasets</div><div class="stat-value accent">${medDatasets.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Total Excluded</div><div class="stat-value red">${totalEntities.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-label">Targets</div><div class="stat-value">${totalTargets.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-label">States</div><div class="stat-value">${stateList.length}</div></div>
-    </div>`;
+  const statStrip = `<div id="med-stat-strip">${renderMedicaidStatStrip('all', byState, medDatasets, stateList.length)}</div>`;
 
   if (_medicaidTab === 'datasets') {
     // Ensure selected state is valid
@@ -43,15 +112,15 @@ async function renderMedicaidView(tab) {
     }
 
     content.innerHTML = tabBar + statStrip + `
-      <div style="display:flex;gap:0;height:calc(100vh - 200px);margin:0 -24px -24px;border-top:1px solid var(--border);overflow:hidden">
+      <div class="med-split-layout">
 
         <!-- State list (left panel) -->
-        <div style="width:240px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">
-          <div style="padding:10px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1">
+        <div class="med-state-panel">
+          <div class="med-state-panel-header">
             <div style="position:relative">
               <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input id="med-state-search" type="text" placeholder="Filter states…" oninput="filterMedicaidStates(this.value)"
-                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px 6px 28px;font-size:12px;color:var(--text);outline:none">
+                class="med-search-input" style="width:100%">
             </div>
           </div>
           <div id="med-state-list">
@@ -65,6 +134,10 @@ async function renderMedicaidView(tab) {
         </div>
       </div>`;
 
+  } else if (_medicaidTab === 'nppes') {
+    content.innerHTML = tabBar + renderNppesView(byState);
+    const _t = document.getElementById('nppes-tile-total');
+    if (_t) _t.textContent = '~8,000,000';
   } else {
     content.innerHTML = tabBar + statStrip + `<div id="med-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading Medicaid exclusion records…</div></div></div>`;
     await loadMedicaidPage(0);
@@ -73,30 +146,25 @@ async function renderMedicaidView(tab) {
 
 function renderMedicaidStateRows(stateList, medDatasets) {
   const allActive = _selectedMedicaidState === 'all';
-  const allRow = `<div class="country-row" data-state="all" onclick="selectMedicaidState('all')"
-    style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;
-      background:${allActive ? 'var(--surface2)' : 'transparent'};
-      border-left:3px solid ${allActive ? 'var(--accent)' : 'transparent'};transition:all .12s">
+  const allRow = `<div class="country-row med-state-row" data-state="all" onclick="selectMedicaidState('all')"
+    style="background:${allActive ? 'var(--surface2)' : 'transparent'};border-left:3px solid ${allActive ? 'var(--accent)' : 'transparent'}">
     <span style="font-size:18px;line-height:1;flex-shrink:0">🇺🇸</span>
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;color:${allActive ? 'var(--text)' : 'var(--muted)'};font-weight:${allActive ? '600' : '400'}">All States</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${medDatasets.length} dataset${medDatasets.length !== 1 ? 's' : ''}</div>
+      <div class="med-state-subtext">${medDatasets.length} dataset${medDatasets.length !== 1 ? 's' : ''}</div>
     </div>
   </div>`;
 
   const rows = stateList.map(([state, dsList]) => {
     const active = _selectedMedicaidState === state;
-    const n = dsList.reduce((s, d) => s + (d.entity_count || 0), 0);
+    const n = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
     const color = STATE_COLOR_MAP[state] || '#94a3b8';
-    return `<div class="country-row" data-state="${esc(state)}" onclick="selectMedicaidState('${esc(state)}')"
-      style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;
-        background:${active ? 'var(--surface2)' : 'transparent'};
-        border-left:3px solid ${active ? 'var(--accent)' : 'transparent'};transition:all .12s">
-      <span style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+    return `<div class="country-row med-state-row" data-state="${esc(state)}" onclick="selectMedicaidState('${esc(state)}')"
+      style="background:${active ? 'var(--surface2)' : 'transparent'};border-left:3px solid ${active ? 'var(--accent)' : 'transparent'}">
+      <span class="med-color-dot" style="width:12px;height:12px;background:${color}"></span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;color:${active ? 'var(--text)' : 'var(--muted)'};font-weight:${active ? '600' : '400'};
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(state)}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+        <div style="font-size:13px;color:${active ? 'var(--text)' : 'var(--muted)'};font-weight:${active ? '600' : '400'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(state)}</div>
+        <div class="med-state-subtext">
           ${dsList.length} dataset${dsList.length !== 1 ? 's' : ''} · ${fmtNum(n)} excluded
         </div>
       </div>
@@ -108,19 +176,19 @@ function renderMedicaidStateRows(stateList, medDatasets) {
 
 function renderMedicaidStateDatasets(state, byState, medDatasets) {
   const dsList = state === 'all' ? medDatasets : (byState[state] || []);
-  const sorted = [...dsList].sort((a, b) => (b.entity_count || 0) - (a.entity_count || 0));
-  const totalEntities = dsList.reduce((s, d) => s + (d.entity_count || 0), 0);
+  const sorted = [...dsList].sort((a, b) => (b.target_count || 0) - (a.target_count || 0));
+  const totalTargets = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
   const color = state !== 'all' ? (STATE_COLOR_MAP[state] || '#94a3b8') : null;
 
   const header = `
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">
       ${color
-        ? `<span style="width:20px;height:20px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>`
+        ? `<span class="med-color-dot" style="width:20px;height:20px;background:${color}"></span>`
         : `<span style="font-size:24px">🇺🇸</span>`}
       <div>
         <div style="font-size:18px;font-weight:700">${state === 'all' ? 'All States' : esc(state)}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:3px">
-          ${dsList.length} dataset${dsList.length !== 1 ? 's' : ''} · ${fmtNum(totalEntities)} excluded providers
+          ${dsList.length} dataset${dsList.length !== 1 ? 's' : ''} · ${fmtNum(totalTargets)} records
         </div>
       </div>
     </div>`;
@@ -154,32 +222,89 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
     </div>`;
   }).join('');
 
-  // California sector + zip charts
+  // Per-state pie charts — shown for any single state
   let sectorSection = '';
-  if (state === 'California') {
+  if (state !== 'all') {
+    const dsParam = (byState[state] || []).map(d => d.name).join(',');
     sectorSection = `
-      <div style="margin-bottom:24px">
-        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">Exclusions by Sector</div>
-        <div id="bar-ca-sector" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div></div>
-      </div>
-      <div style="margin-bottom:24px">
-        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">Exclusions by Zip Code <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
-        <div id="bar-ca-zip" style="min-height:260px"><div style="color:var(--muted);font-size:12px;padding:8px 0">Loading…</div></div>
+      <div id="med-sector-grid" class="med-sector-grid">
+        <div id="med-cell-sector">
+          <div class="med-chart-label">Offenses by Sector</div>
+          <div id="pie-state-sector" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+          <div id="pie-sector-footnote" style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5"></div>
+        </div>
+        <div id="med-cell-city">
+          <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
+          <div id="pie-state-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+        </div>
+        <div id="med-cell-sectorzip">
+          <div class="med-chart-label" style="margin-bottom:4px">
+            Sector by City <span id="pie-state-topsector-label" style="font-weight:400;color:var(--muted)"></span>
+          </div>
+          <div id="pie-state-topsector-chips" style="display:flex;flex-wrap:wrap;gap:0;margin-bottom:10px;border-bottom:1px solid var(--border)"></div>
+          <div id="pie-state-topsector-insight" style="margin-bottom:10px;line-height:1.6"></div>
+          <div id="pie-state-topsector-zip" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+          <div style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5">*** Illegible records that could not be read are not included in this dataset.</div>
+        </div>
       </div>`;
+
+    _medicaidDsParam = dsParam;
+
+    const targets = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
+    const centerVal = targets >= 1000 ? (targets / 1000).toFixed(1) + 'k' : targets.toLocaleString();
+
     setTimeout(() => {
-      fetch('/api/stats/medicaid-by-sector?dataset=us_ca_med_exclusions')
+      fetch(`/api/stats/medicaid-by-sector?datasets=${encodeURIComponent(dsParam)}`)
         .then(r => r.json()).then(data => {
-          const el = document.getElementById('bar-ca-sector');
+          const el = document.getElementById('pie-state-sector');
           if (!el) return;
+          if (!data.length) { _removeMedCell('med-cell-sector'); return; }
           el.innerHTML = '';
-          drawBarChart('bar-ca-sector', data.slice(0, 20), '#4f8ef7');
+          const sliced = data.slice(0, 20);
+          const sectorColors = sliced.map((_, i) => {
+            const t = sliced.length <= 1 ? 0 : i / (sliced.length - 1);
+            return `hsl(${Math.round(t * 50)}, 88%, 52%)`;
+          });
+          // Build chips and attach event listeners
+          const tabData = sliced;
+          const chipsEl = document.getElementById('pie-state-topsector-chips');
+          if (chipsEl) {
+            chipsEl.innerHTML = tabData.map((d) => {
+              const acronym = d.label.split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 5);
+              return `<a class="sector-chip" data-sector="${esc(d.label)}" href="#"
+                onmouseover="if(this.style.fontWeight!=='700'){this.style.color='var(--text)'}"
+                onmouseout="if(this.style.fontWeight!=='700'){this.style.color='var(--muted)'}"
+                title="${esc(d.label)}">${esc(acronym)}</a>`;
+            }).join('');
+            chipsEl.querySelectorAll('.sector-chip').forEach(btn => {
+              btn.addEventListener('click', (e) => { e.preventDefault(); _loadSectorZip(btn.dataset.sector); });
+            });
+          }
+          drawPieChart('pie-state-sector', sliced, sectorColors, {
+            unit: 'records',
+            centerValue: centerVal,
+            centerLabel: data.length + ' sectors',
+            totalOverride: targets,
+            legendFmt: (_v, pct) => pct + '%',
+          });
+          const footnoteEl = document.getElementById('pie-sector-footnote');
+          if (footnoteEl && data.length > sliced.length) {
+            footnoteEl.textContent = `** Showing top 20 of ${data.length} sectors`;
+          }
+          // Load first tab sector zip by default
+          _loadSectorZip(tabData[0]?.label || sliced[0]?.label);
         });
-      fetch('/api/stats/medicaid-by-zipcode?dataset=us_ca_med_exclusions')
+      fetch(`/api/stats/medicaid-by-city?datasets=${encodeURIComponent(dsParam)}`)
         .then(r => r.json()).then(data => {
-          const el = document.getElementById('bar-ca-zip');
+          const el = document.getElementById('pie-state-city');
           if (!el) return;
+          if (!data.length) { _removeMedCell('med-cell-city'); return; }
           el.innerHTML = '';
-          drawBarChart('bar-ca-zip', data.slice(0, 20), '#3ecf8e');
+          drawPieChart('pie-state-city', data.slice(0, 20), null, {
+            unit: 'records',
+            centerLabel: 'cities',
+            legendFmt: (_v, pct) => pct + '%',
+          });
         });
     }, 0);
   }
@@ -205,6 +330,9 @@ function selectMedicaidState(state) {
     const name = row.querySelector('div > div:first-child');
     if (name) { name.style.color = active ? 'var(--text)' : 'var(--muted)'; name.style.fontWeight = active ? '600' : '400'; }
   });
+  const totalStates = Object.keys(byState).length;
+  const strip = document.getElementById('med-stat-strip');
+  if (strip) strip.innerHTML = renderMedicaidStatStrip(state, byState, medDatasets, totalStates);
   const panel = document.getElementById('med-datasets-panel');
   if (panel) panel.innerHTML = renderMedicaidStateDatasets(state, byState, medDatasets);
 }
@@ -215,6 +343,73 @@ function filterMedicaidStates(q) {
     const name = row.querySelector('div > div:first-child');
     const text = (name?.textContent || '').toLowerCase();
     row.style.display = text.includes(lower) ? '' : 'none';
+  });
+}
+
+function buildMedicaidTable(rows, cols) {
+  const filterRow = `<tr>${cols.map(k => `
+    <th style="padding:3px 6px;background:var(--surface2);border-bottom:1px solid var(--border)">
+      <input data-col="${k}" type="text" placeholder="…"
+        value="${esc(_medColFilters[k] || '')}"
+        oninput="filterMedicaidColumn('${k}', this.value)"
+        class="med-col-filter-input">
+    </th>`).join('')}</tr>`;
+
+  const thead = `<thead>
+    <tr style="position:sticky;top:0;z-index:2">${cols.map(k => {
+      const w = COL_WIDTHS[k] || 130;
+      return `<th class="med-th" style="min-width:${w}px">${ES_COL_LABELS[k] || k}</th>`;
+    }).join('')}</tr>
+    <tr style="position:sticky;top:34px;z-index:2">${filterRow.slice(filterRow.indexOf('<tr>') + 4, filterRow.lastIndexOf('</tr>'))}</tr>
+  </thead>`;
+
+  const tbody = `<tbody>${rows.map((r, i) => {
+    const bg = i % 2 === 0 ? 'var(--bg)' : 'var(--surface)';
+    const cells = cols.map(k => {
+      const val = r[k] || '';
+      let cell = '';
+      if (k === 'schema') {
+        const color = SCHEMA_COLORS[val] || 'var(--muted)';
+        cell = val ? `<span style="padding:2px 8px;background:${color}18;color:${color};border-radius:10px;font-size:11px;font-weight:600">${esc(val)}</span>` : '';
+      } else if (k === '_dataset') {
+        cell = val ? `<span style="font-size:11px;color:var(--accent);font-family:monospace">${esc(val)}</span>` : '';
+      } else if (k === 'id') {
+        cell = val ? `<span style="font-family:monospace;font-size:10px;color:var(--muted)">${esc(val)}</span>` : '';
+      } else if (k === 'first_seen' || k === 'last_seen' || k === 'last_change') {
+        cell = val ? `<span style="font-size:11px;color:var(--muted)">${esc(String(val).slice(0,10))}</span>` : '';
+      } else {
+        cell = val ? `<span style="font-size:11px">${esc(String(val))}</span>` : '';
+      }
+      return `<td class="med-td">${cell || '<span style="color:var(--border)">—</span>'}</td>`;
+    }).join('');
+    return `<tr style="background:${bg}">${cells}</tr>`;
+  }).join('')}</tbody>`;
+
+  return thead + tbody;
+}
+
+function filterMedicaidColumn(col, val) {
+  clearTimeout(_medFilterTimer);
+  if (val.trim()) _medColFilters[col] = val.trim().toLowerCase();
+  else delete _medColFilters[col];
+  _medFilterTimer = setTimeout(() => {
+    const d = window._medRecordsData;
+    if (!d) return;
+    const globalQ = (document.querySelector('#med-records-body input[placeholder="Filter records…"]')?.value || '').toLowerCase().trim();
+    const filtered = _applyMedicaidFilters(d.results, globalQ);
+    const tbl = document.getElementById('med-table');
+    if (tbl) tbl.innerHTML = buildMedicaidTable(filtered, d.cols);
+  }, 200);
+}
+
+function _applyMedicaidFilters(results, globalQ) {
+  return results.filter(r => {
+    if (globalQ && !Object.values(r).some(v => v && String(v).toLowerCase().includes(globalQ))) return false;
+    for (const [col, q] of Object.entries(_medColFilters)) {
+      const v = r[col];
+      if (!v || !String(v).toLowerCase().includes(q)) return false;
+    }
+    return true;
   });
 }
 
@@ -249,20 +444,20 @@ async function loadMedicaidPage(offset) {
         <div style="position:relative;margin-left:auto">
           <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" placeholder="Filter records…" oninput="filterMedicaidRecords(this.value)"
-            style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px 6px 28px;font-size:12px;color:var(--text);outline:none;width:220px">
+            class="med-search-input" style="width:220px;border-radius:var(--radius);padding-right:10px">
         </div>
       </div>`;
 
     const moreBtn = data.loaded < data.total
       ? `<div id="med-load-more" style="text-align:center;padding:16px">
-           <button onclick="loadMedicaidPage(${PAGE})"
-             style="padding:8px 20px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--accent);font-size:13px;cursor:pointer">
+           <button onclick="loadMedicaidPage(${PAGE})" class="med-load-more-btn">
              Load next ${PAGE.toLocaleString()} records (${(data.total - PAGE).toLocaleString()} remaining)
            </button>
          </div>` : '';
 
+    _medColFilters = {};
     body.innerHTML = header +
-      `<div style="overflow-x:auto"><table id="med-table" style="width:100%;border-collapse:collapse;font-size:12px">${buildGenericTable(data.results, cols)}</table></div>` +
+      `<div style="overflow-x:auto"><table id="med-table" style="width:100%;border-collapse:collapse;font-size:12px">${buildMedicaidTable(data.results, cols)}</table></div>` +
       moreBtn;
 
   } else {
@@ -272,14 +467,13 @@ async function loadMedicaidPage(offset) {
     d.loaded = d.results.length;
 
     const tbl = document.getElementById('med-table');
-    if (tbl) tbl.innerHTML = buildGenericTable(d.results, d.cols);
+    if (tbl) tbl.innerHTML = buildMedicaidTable(d.results, d.cols);
 
     const nextOffset = offset + PAGE;
     const moreEl = document.getElementById('med-load-more');
     if (moreEl) {
       if (nextOffset < data.total) {
-        moreEl.innerHTML = `<button onclick="loadMedicaidPage(${nextOffset})"
-          style="padding:8px 20px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--accent);font-size:13px;cursor:pointer">
+        moreEl.innerHTML = `<button onclick="loadMedicaidPage(${nextOffset})" class="med-load-more-btn">
           Load next ${PAGE.toLocaleString()} records (${(data.total - nextOffset).toLocaleString()} remaining)
         </button>`;
       } else {
@@ -301,11 +495,167 @@ function filterMedicaidRecords(q) {
   _medFilterTimer = setTimeout(() => {
     const d = window._medRecordsData;
     if (!d) return;
-    const lower = q.toLowerCase().trim();
-    const filtered = lower
-      ? d.results.filter(r => Object.values(r).some(v => v && String(v).toLowerCase().includes(lower)))
-      : d.results;
+    const filtered = _applyMedicaidFilters(d.results, q.toLowerCase().trim());
     const tbl = document.getElementById('med-table');
-    if (tbl) tbl.innerHTML = buildGenericTable(filtered, d.cols);
+    if (tbl) tbl.innerHTML = buildMedicaidTable(filtered, d.cols);
   }, 200);
 }
+
+// ── NPPES tab ─────────────────────────────────────────────────────────────────
+
+let _nppesSkip = 0;
+
+function renderNppesView(byState) {
+  let stateAbbrev = '';
+  if (_selectedMedicaidState !== 'all') {
+    const ds = (byState[_selectedMedicaidState] || [])[0];
+    if (ds) {
+      const m = ds.name.match(/^us_([a-z]{2})_/);
+      stateAbbrev = m ? m[1].toUpperCase() : '';
+    }
+  }
+
+  return `
+    <div style="padding:4px 0 24px">
+      <div class="stats-grid" style="margin-bottom:20px" id="nppes-stat-strip">
+        <div class="stat-card"><div class="stat-label">Registered NPIs</div><div class="stat-value accent" id="nppes-tile-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Individuals (NPI-1)</div><div class="stat-value" id="nppes-tile-individuals">—</div></div>
+        <div class="stat-card"><div class="stat-label">Organizations (NPI-2)</div><div class="stat-value" style="color:var(--yellow)" id="nppes-tile-orgs">—</div></div>
+        <div class="stat-card"><div class="stat-label">Active Providers</div><div class="stat-value green" id="nppes-tile-active">—</div></div>
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px">National Plan and Provider Enumeration System</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;max-width:720px;margin:0">
+          Any entity that electronically transmits health information in connection with a HIPAA-covered transaction
+          (claims, eligibility checks, referrals, etc.) is required to obtain an NPI. NPPES is the system that issues
+          and tracks those identifiers.
+        </p>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:20px">
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">State</label>
+            <input id="nppes-state" type="text" placeholder="CA" value="${stateAbbrev}" maxlength="2"
+              style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;color:var(--text);outline:none;box-sizing:border-box;text-transform:uppercase"
+              onkeydown="if(event.key==='Enter')nppesSearch(0)">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Zip Code</label>
+            <input id="nppes-zip" type="text" placeholder="90210, 90211, …"
+              style="width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;color:var(--text);outline:none;box-sizing:border-box"
+              onkeydown="if(event.key==='Enter')nppesSearch(0)">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Registrant Type</label>
+            <select id="nppes-type"
+              style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;color:var(--text);outline:none;cursor:pointer">
+              <option value="">All</option>
+              <option value="NPI-1">NPI-1 · Individual</option>
+              <option value="NPI-2">NPI-2 · Organization</option>
+            </select>
+          </div>
+          <button onclick="nppesSearch(0)" class="med-load-more-btn" style="padding:7px 20px">Search</button>
+          <span style="font-size:11px;color:var(--muted)">200 results per page (API max)</span>
+        </div>
+      </div>
+      <div id="nppes-results"></div>
+    </div>`;
+}
+
+async function nppesSearch(skip) {
+  _nppesSkip = skip || 0;
+  const state           = (document.getElementById('nppes-state')?.value.trim() || '').toUpperCase();
+  const zipRaw          = document.getElementById('nppes-zip')?.value || '';
+  const enumerationType = document.getElementById('nppes-type')?.value || '';
+  const resultsEl       = document.getElementById('nppes-results');
+  if (!resultsEl) return;
+
+  const zips = zipRaw.split(',').map(z => z.trim()).filter(Boolean);
+
+  if (!state) {
+    resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Enter a state abbreviation (e.g. CA).</div>';
+    return;
+  }
+  if (!zips.length) {
+    resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Enter at least one zip code.</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Querying NPI Registry…</div></div>';
+
+  const makeQs = zip => new URLSearchParams({
+    number: '', enumeration_type: enumerationType, taxonomy_description: '', name_purpose: '',
+    first_name: '', use_first_name_alias: '', last_name: '', organization_name: '',
+    address_purpose: '', city: '', state, postal_code: zip, country_code: '',
+    limit: 200, skip: _nppesSkip, pretty: 'on', version: '2.1',
+  }).toString();
+
+  try {
+    const responses = await Promise.all(zips.map(zip => fetch(`/api/nppes?${makeQs(zip)}`).then(r => r.json())));
+
+    // Merge and deduplicate by NPI number
+    const seen = new Set();
+    const results = [];
+    let total = 0;
+    for (const data of responses) {
+      if (data.Errors) continue;
+      total += data.result_count || 0;
+      for (const r of (data.results || [])) {
+        if (!seen.has(r.number)) { seen.add(r.number); results.push(r); }
+      }
+    }
+
+    if (responses.every(d => d.Errors)) {
+      const msg = responses[0].Errors?.[0]?.description || 'API error';
+      resultsEl.innerHTML = `<div style="color:var(--red);padding:8px 0;font-size:12px">${esc(msg)}</div>`;
+      return;
+    }
+
+    // Update stat tiles
+    const npi1 = results.filter(r => r.enumeration_type === 'NPI-1').length;
+    const npi2 = results.filter(r => r.enumeration_type === 'NPI-2').length;
+    const active = results.filter(r => (r.basic || {}).status === 'A').length;
+    const setTile = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setTile('nppes-tile-individuals', npi1.toLocaleString());
+    setTile('nppes-tile-orgs',        npi2.toLocaleString());
+    setTile('nppes-tile-active',      active.toLocaleString());
+
+    if (!results.length) {
+      resultsEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No results found.</div>';
+      return;
+    }
+
+    const cols = ['NPI', 'Name', 'Type', 'Credential', 'Primary Specialty', 'City / State', 'Status'];
+    const thead = `<thead><tr>${cols.map(h =>
+      `<th style="padding:8px 12px;text-align:left;background:var(--surface2);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`
+    ).join('')}</tr></thead>`;
+
+    const cell = (v, extra = '') =>
+      `<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;${extra}">${v}</td>`;
+    const tbody = `<tbody>${results.map((r, i) => {
+      const b = r.basic || {}, isOrg = r.enumeration_type === 'NPI-2';
+      const name = isOrg ? (b.organization_name || '—') : ([b.first_name, b.middle_name, b.last_name].filter(Boolean).join(' ') || '—');
+      const tax  = (r.taxonomies || []).find(t => t.primary) || (r.taxonomies || [])[0];
+      const addr = (r.addresses || []).find(a => a.address_purpose === 'LOCATION') || (r.addresses || [])[0];
+      return `<tr style="background:${i % 2 === 0 ? 'var(--bg)' : 'var(--surface)'}">
+        ${cell(`<span style="font-family:monospace;color:var(--muted)">${esc(r.number || '')}</span>`)}
+        ${cell(esc(name), 'font-size:12px')}
+        ${cell(`<span style="color:${isOrg ? 'var(--yellow)' : 'var(--accent)'}">${isOrg ? 'Organization' : 'Individual'}</span>`)}
+        ${cell(esc(b.credential || '—'), 'color:var(--muted)')}
+        ${cell(esc(tax?.desc || '—'))}
+        ${cell(esc(addr ? [addr.city, addr.state].filter(Boolean).join(', ') : '—'), 'color:var(--muted)')}
+        ${cell(b.status === 'A' ? '<span style="color:var(--green)">Active</span>' : `<span style="color:var(--red)">${esc(b.status || 'Unknown')}</span>`)}
+      </tr>`;
+    }).join('')}</tbody>`;
+
+    resultsEl.innerHTML =
+      `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+         ${results.length.toLocaleString()} result${results.length !== 1 ? 's' : ''} across ${zips.length} zip code${zips.length !== 1 ? 's' : ''}
+       </div>` +
+      `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div>`;
+
+  } catch (e) {
+    resultsEl.innerHTML = `<div style="color:var(--red);padding:8px 0;font-size:12px">Request failed: ${esc(e.message)}</div>`;
+  }
+}
+

@@ -157,6 +157,27 @@
   .notif { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; font-size: 13px; z-index: 200; opacity: 0; transform: translateY(8px); transition: all .2s; }
   .notif.show { opacity: 1; transform: translateY(0); }
 
+  /* Medicaid view */
+  .med-tab-bar { display:flex; gap:2px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+  .med-tab-btn { padding:8px 18px; font-size:13px; border:none; border-bottom:2px solid transparent; background:none; color:var(--muted); cursor:pointer; font-weight:400; }
+  .med-tab-btn.active { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
+  .med-split-layout { display:flex; gap:0; height:calc(100vh - 200px); margin:0 -24px -24px; border-top:1px solid var(--border); overflow:hidden; }
+  .med-state-panel { width:240px; flex-shrink:0; border-right:1px solid var(--border); overflow-y:auto; background:var(--surface); }
+  .med-state-panel-header { padding:10px 12px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:1; }
+  .med-state-row { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; transition:all .12s; }
+  .med-state-subtext { font-size:11px; color:var(--muted); margin-top:2px; }
+  .med-color-dot { border-radius:50%; flex-shrink:0; display:inline-block; }
+  .med-sector-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }
+  .med-chart-label { font-size:13px; font-weight:600; color:var(--text); margin-bottom:8px; }
+  .med-chart-host { display:flex; align-items:center; gap:20px; min-height:40px; }
+  .med-placeholder-text { color:var(--muted); font-size:12px; padding:8px 0; }
+  .med-th { padding:8px 12px; text-align:left; background:var(--surface2); color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .med-td { padding:7px 12px; border-bottom:1px solid var(--border); vertical-align:top; white-space:normal; }
+  .med-col-filter-input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:3px 6px; font-size:11px; color:var(--text); outline:none; box-sizing:border-box; }
+  .med-load-more-btn { padding:8px 20px; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); color:var(--accent); font-size:13px; cursor:pointer; }
+  .sector-chip { font-size:11px; font-weight:500; color:var(--muted); text-decoration:none; cursor:pointer; padding:5px 12px; border-bottom:2px solid transparent; white-space:nowrap; transition:color .12s, border-color .12s; }
+  .med-search-input { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:6px 8px 6px 28px; font-size:12px; color:var(--text); outline:none; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }

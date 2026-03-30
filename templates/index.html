@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenSanctions Explorer</title>
+<title>International Sanctions Explorer</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -13,8 +13,8 @@
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="logo">
-      <div class="logo-title">OpenSanctions</div>
-      <div class="logo-sub">Dataset Explorer</div>
+      <div class="logo-title">All Sanctions</div>
+      <div class="logo-sub">International Dataset Explorer</div>
     </div>
     <nav>
       <button class="nav-item active" data-view="datasets" onclick="switchView('datasets')">
@@ -23,7 +23,7 @@
       </button>
       <button class="nav-item" data-view="stats" onclick="switchView('stats')">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Statistics
+        Visual Statistics
       </button>
       <button class="nav-item" data-view="cyber" onclick="switchView('cyber')">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -43,7 +43,7 @@
       </button>
       <button class="nav-item" data-view="countries" onclick="switchView('countries')">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        By Country
+        Search By Country
       </button>
       <button class="nav-item" data-view="tags" onclick="switchView('tags')">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>

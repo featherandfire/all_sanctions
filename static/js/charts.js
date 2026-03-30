@@ -66,7 +66,70 @@ function drawBarChart(containerId, data, color) {
   }
 }
 
-// opts: { unit, centerLabel, centerValue, valueFmt, legendFmt, colorMap, coloredLabels }
+function drawHorizontalBarChart(containerId, data, color) {
+  const container = document.getElementById(containerId);
+  if (!container || !data.length) return;
+
+  const barH    = 26;
+  const margin  = { top: 8, right: 60, bottom: 8, left: 180 };
+  const totalW  = container.clientWidth || 520;
+  const w       = totalW - margin.left - margin.right;
+  const totalH  = data.length * barH + margin.top + margin.bottom;
+
+  const svg = d3.select(`#${containerId}`).append('svg')
+    .attr('width', totalW).attr('height', totalH)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const x = d3.scaleLinear().domain([0, d3.max(data, d => d.value) * 1.08]).nice().range([0, w]);
+  const y = d3.scaleBand().domain(data.map(d => d.label)).range([0, data.length * barH]).padding(0.22);
+
+  // Grid lines
+  svg.append('g')
+    .call(d3.axisTop(x).ticks(5).tickSize(-(data.length * barH)).tickFormat(''))
+    .selectAll('line').style('stroke', '#2a2f3d').style('stroke-dasharray', '3,3');
+  svg.selectAll('.domain').remove();
+
+  // Y axis (labels)
+  svg.append('g').call(d3.axisLeft(y).tickSize(0))
+    .selectAll('text')
+    .style('fill', '#94a3b8').style('font-size', '11px')
+    .attr('dx', '-6');
+  svg.select('.domain').remove();
+
+  // Tooltip
+  let tip = document.getElementById('bar-tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'bar-tooltip';
+    tip.style.cssText = 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none';
+    document.body.appendChild(tip);
+  }
+
+  // Bars
+  svg.selectAll('.bar').data(data).enter().append('rect')
+    .attr('y', d => y(d.label)).attr('x', 0)
+    .attr('height', y.bandwidth()).attr('width', d => x(d.value))
+    .attr('fill', color).attr('rx', 3).attr('opacity', 0.88)
+    .style('cursor', 'pointer')
+    .on('mousemove', function(event, d) {
+      tip.style.display = 'block';
+      tip.style.left = (event.clientX + 12) + 'px';
+      tip.style.top  = (event.clientY - 10) + 'px';
+      tip.innerHTML = `<strong>${esc(d.label)}</strong><br>${d.value.toLocaleString()} records`;
+      d3.select(this).attr('opacity', 1);
+    })
+    .on('mouseleave', function() { tip.style.display = 'none'; d3.select(this).attr('opacity', 0.88); });
+
+  // Value labels at end of bars
+  svg.selectAll('.bar-label').data(data).enter().append('text')
+    .attr('y', d => y(d.label) + y.bandwidth() / 2)
+    .attr('x', d => x(d.value) + 5)
+    .attr('dy', '0.35em')
+    .style('font-size', '10px').style('fill', '#64748b')
+    .text(d => d.value >= 1000 ? (d.value / 1000).toFixed(1) + 'k' : d.value);
+}
+
+// opts: { unit, centerLabel, centerValue, valueFmt, legendFmt, colorMap, coloredLabels, onClick, totalOverride }
 //   unit          — word after the value in the tooltip  (default: 'entities')
 //   centerLabel   — small text below the center number   (default: 'entities')
 //   centerValue   — override the center big number text  (default: formatted total)
@@ -74,6 +137,11 @@ function drawBarChart(containerId, data, color) {
 //   legendFmt     — fn(value, pct) for legend right col  (default: pct + '%')
 //   colorMap      — {label: color} overrides indexed colors array per label
 //   coloredLabels — if true, legend label text is colored with the slice color
+//   onClick       — fn(label, value) called when a slice or legend row is clicked
+//   totalOverride — use this number as the denominator for tooltip percentages instead of sum of slice values
+//   pctFn        — fn(datum) => number: custom per-slice percentage (overrides totalOverride for tooltip + legend)
+//   onHover      — fn(datum) called on slice mousemove
+//   onLeave      — fn() called when mouse leaves a slice
 function drawPieChart(containerId, data, colors, opts) {
   const container = document.getElementById(containerId);
   if (!container || !data.length) return;
@@ -85,6 +153,11 @@ function drawPieChart(containerId, data, colors, opts) {
   const legendFmt     = (opts && opts.legendFmt)     || ((_v, pct) => pct + '%');
   const colorMap      = (opts && opts.colorMap)      || null;
   const coloredLabels = (opts && opts.coloredLabels) || false;
+  const onClick       = (opts && opts.onClick)       || null;
+  const totalOverride = (opts && opts.totalOverride) || null;
+  const pctFn        = (opts && opts.pctFn)        || null;
+  const onHover      = (opts && opts.onHover)      || null;
+  const onLeave      = (opts && opts.onLeave)      || null;
 
   // Resolve color for a data point — colorMap takes priority over indexed array
   const getColor = (label, i) => (colorMap && colorMap[label]) || (colors && colors[i % colors.length]) || _hashColor(label);
@@ -92,7 +165,8 @@ function drawPieChart(containerId, data, colors, opts) {
   const size = 220;
   const radius = size / 2 - 8;
   const innerRadius = radius * 0.42;
-  const total = data.reduce((s, d) => s + d.value, 0);
+  const sliceTotal = data.reduce((s, d) => s + d.value, 0);
+  const total = totalOverride || sliceTotal;
 
   const svg = d3.select(`#${containerId}`)
     .append('svg')
@@ -122,16 +196,21 @@ function drawPieChart(containerId, data, colors, opts) {
     .attr('stroke', '#0d0f14').attr('stroke-width', 1.5)
     .style('cursor', 'pointer')
     .on('mousemove', function(event, d) {
-      const pct = ((d.data.value / total) * 100).toFixed(1);
+      const pct = pctFn ? pctFn(d.data).toFixed(1) : ((d.data.value / total) * 100).toFixed(1);
       tip.style.display = 'block';
       tip.style.left = (event.clientX + 14) + 'px';
       tip.style.top  = (event.clientY - 10) + 'px';
-      tip.innerHTML = `<strong>${esc(d.data.label)}</strong><br>${valueFmt(d.data.value)} ${unit}<br><span style="color:#64748b">${pct}% of chart</span>`;
+      tip.innerHTML = `<strong>${esc(d.data.label)}</strong><br>${valueFmt(d.data.value)} ${unit}<br><span style="color:#64748b">${pct}% of records</span>`;
       d3.select(this).attr('d', arcHover);
+      if (onHover) onHover(d.data);
     })
     .on('mouseleave', function() {
       tip.style.display = 'none';
       d3.select(this).attr('d', arc);
+      if (onLeave) onLeave();
+    })
+    .on('click', function(_event, d) {
+      if (onClick) onClick(d.data.label, d.data.value);
     });
 
   // Centre label
@@ -147,16 +226,17 @@ function drawPieChart(containerId, data, colors, opts) {
   // Legend
   const legend = d3.select(`#${containerId}`)
     .append('div')
-    .attr('style', 'flex:1;min-width:120px;display:flex;flex-direction:column;gap:5px;padding-top:6px;max-height:220px;overflow-y:auto');
+    .attr('style', 'flex:1;min-width:120px;display:flex;flex-direction:column;gap:5px;padding-top:6px');
 
   data.forEach((d, i) => {
-    const pct   = ((d.value / total) * 100).toFixed(1);
+    const pct   = pctFn ? pctFn(d).toFixed(1) : ((d.value / (totalOverride || sliceTotal)) * 100).toFixed(1);
     const color = getColor(d.label, i);
-    legend.append('div')
-      .attr('style', 'display:flex;align-items:center;gap:7px;font-size:11px;color:#e2e8f0;cursor:default')
+    const row = legend.append('div')
+      .attr('style', `display:flex;align-items:center;gap:7px;font-size:11px;color:#e2e8f0;cursor:${onClick ? 'pointer' : 'default'}`)
       .html(`<span style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0"></span>
              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${coloredLabels ? `color:${color}` : ''}" title="${esc(d.label)}">${esc(d.label)}</span>
              <span style="color:#64748b;flex-shrink:0">${legendFmt(d.value, pct)}</span>`);
+    if (onClick) row.on('click', () => onClick(d.label, d.value));
   });
 }
 
