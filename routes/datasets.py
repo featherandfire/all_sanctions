@@ -4,6 +4,7 @@ Routes: /api/datasets, /api/search, /api/dataset/<name>, /api/stats, /api/tags, 
 """
 
 import re
+from collections import Counter
 from flask import Blueprint, jsonify, request
 from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch, _cache, _entity_cache
 
@@ -285,62 +286,43 @@ def _medicaid_entities(default="us_ca_med_exclusions"):
     return rows
 
 
-@datasets_bp.route("/api/stats/medicaid-by-zipcode")
-def api_medicaid_by_zipcode():
-    """Zip code breakdown across one or more Medicaid datasets.
-    Falls back to city-based lookup when no zip is present in the address."""
-    counts = {}
+def _medicaid_counts(keys_fn):
+    """Aggregate medicaid entities via a per-row key extractor and return a sorted label/value list."""
+    counts = Counter()
     for row in _medicaid_entities():
-        z = _zip_from_address(row.get("address"))
-        if z:
-            counts[z] = counts.get(z, 0) + 1
+        for key in keys_fn(row):
+            if key:
+                counts[key] += 1
     return jsonify(sorted(
         [{"label": k, "value": v} for k, v in counts.items()],
         key=lambda x: -x["value"]
     ))
+
+
+@datasets_bp.route("/api/stats/medicaid-by-zipcode")
+def api_medicaid_by_zipcode():
+    """Zip code breakdown across one or more Medicaid datasets."""
+    return _medicaid_counts(lambda r: [_zip_from_address(r.get("address"))])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-city")
 def api_medicaid_by_city():
     """City breakdown across one or more Medicaid datasets."""
-    counts = {}
-    for row in _medicaid_entities():
-        city = _city_from_address(row.get("address"))
-        if city:
-            counts[city] = counts.get(city, 0) + 1
-    return jsonify(sorted(
-        [{"label": k, "value": v} for k, v in counts.items()],
-        key=lambda x: -x["value"]
-    ))
+    return _medicaid_counts(lambda r: [_city_from_address(r.get("address"))])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-schema")
 def api_medicaid_by_schema():
     """Person vs Organisation breakdown across one or more Medicaid datasets."""
-    counts = {}
-    for row in _medicaid_entities():
-        schema = row.get("schema") or "Unknown"
-        counts[schema] = counts.get(schema, 0) + 1
-    return jsonify(sorted(
-        [{"label": k, "value": v} for k, v in counts.items()],
-        key=lambda x: -x["value"]
-    ))
+    return _medicaid_counts(lambda r: [r.get("schema") or "Unknown"])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-sector")
 def api_medicaid_by_sector():
     """Sector breakdown across one or more Medicaid datasets."""
-    counts = {}
-    for row in _medicaid_entities():
-        raw = row.get("sector") or row.get("position") or row.get("title") or ""
-        for part in raw.split(","):
-            part = part.strip()
-            if part:
-                counts[part] = counts.get(part, 0) + 1
-    return jsonify(sorted(
-        [{"label": k, "value": v} for k, v in counts.items()],
-        key=lambda x: -x["value"]
-    ))
+    return _medicaid_counts(
+        lambda r: [p.strip() for p in (r.get("sector") or r.get("position") or r.get("title") or "").split(",")]
+    )
 
 
 @datasets_bp.route("/api/stats/medicaid-top-sector-cities")

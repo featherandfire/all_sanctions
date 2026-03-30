@@ -1,3 +1,10 @@
+function _hslGradient(n) {
+  return Array.from({ length: n }, (_, i) => {
+    const t = n <= 1 ? 0 : i / (n - 1);
+    return `hsl(${Math.round(t * 50)}, 88%, 52%)`;
+  });
+}
+
 let _medicaidTab = 'datasets';
 let _medicaidStateFilter = null;
 let _selectedMedicaidState = 'all';
@@ -50,10 +57,7 @@ function _loadSectorZip(sector) {
     }
 
     const sliced = data.slice(0, 10);
-    const zipColors = sliced.map((_, i) => {
-      const t = sliced.length <= 1 ? 0 : i / (sliced.length - 1);
-      return `hsl(${Math.round(t * 50)}, 88%, 52%)`;
-    });
+    const zipColors = _hslGradient(sliced.length);
     drawPieChart('pie-state-topsector-zip', sliced, zipColors, {
       unit: 'records',
       centerLabel: 'cities',
@@ -261,10 +265,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           if (!data.length) { _removeMedCell('med-cell-sector'); return; }
           el.innerHTML = '';
           const sliced = data.slice(0, 20);
-          const sectorColors = sliced.map((_, i) => {
-            const t = sliced.length <= 1 ? 0 : i / (sliced.length - 1);
-            return `hsl(${Math.round(t * 50)}, 88%, 52%)`;
-          });
+          const sectorColors = _hslGradient(sliced.length);
           // Build chips and attach event listeners
           const tabData = sliced;
           const chipsEl = document.getElementById('pie-state-topsector-chips');

@@ -1,3 +1,14 @@
+function _ensureTooltip(id, cssText) {
+  let tip = document.getElementById(id);
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = id;
+    tip.style.cssText = cssText;
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
 function drawBarChart(containerId, data, color) {
   const container = document.getElementById(containerId);
   if (!container || !data.length) return;
@@ -34,13 +45,7 @@ function drawBarChart(containerId, data, color) {
   svg.select('.domain').style('stroke', '#2a2f3d');
 
   // Tooltip
-  let tip = document.getElementById('bar-tooltip');
-  if (!tip) {
-    tip = document.createElement('div');
-    tip.id = 'bar-tooltip';
-    tip.style.cssText = 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none';
-    document.body.appendChild(tip);
-  }
+  const tip = _ensureTooltip('bar-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none');
 
   // Bars
   svg.selectAll('.bar').data(data).enter().append('rect')
@@ -97,13 +102,7 @@ function drawHorizontalBarChart(containerId, data, color) {
   svg.select('.domain').remove();
 
   // Tooltip
-  let tip = document.getElementById('bar-tooltip');
-  if (!tip) {
-    tip = document.createElement('div');
-    tip.id = 'bar-tooltip';
-    tip.style.cssText = 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none';
-    document.body.appendChild(tip);
-  }
+  const tip = _ensureTooltip('bar-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none');
 
   // Bars
   svg.selectAll('.bar').data(data).enter().append('rect')
@@ -180,13 +179,7 @@ function drawPieChart(containerId, data, colors, opts) {
   const arcHover = d3.arc().innerRadius(innerRadius).outerRadius(radius + 6).cornerRadius(3);
 
   // Tooltip div (shared)
-  let tip = document.getElementById('pie-tooltip');
-  if (!tip) {
-    tip = document.createElement('div');
-    tip.id = 'pie-tooltip';
-    tip.style.cssText = 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:8px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none;max-width:200px;line-height:1.5';
-    document.body.appendChild(tip);
-  }
+  const tip = _ensureTooltip('pie-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:8px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none;max-width:200px;line-height:1.5');
 
   g.selectAll('path')
     .data(pie(data))
