@@ -295,6 +295,9 @@ _SECTOR_ALIASES = {
     'dds':                     'Dentist',
     'dentist':                 'Dentist',
     'pca':                     'Personal Care Assistant',
+    'direct support worker (individual dsw)': 'Direct Support Worker',
+    'dsw':                     'Direct Support Worker',
+
 }
 
 def _normalize_sector(s):
