@@ -286,8 +286,15 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
         .filter(d => d.value > 0)
         .sort((a, b) => b.value - a.value)
         .slice(0, 25);
-      if (document.getElementById('bar-all-states') && stateBarData.length) {
-        drawHorizontalBarChart('bar-all-states', stateBarData, 'var(--accent)', { marginLeft: 40 });
+      const barEl = document.getElementById('bar-all-states');
+      if (barEl && stateBarData.length) {
+        const maxVal = stateBarData[0].value;
+        barEl.innerHTML = stateBarData.map(d => `
+          <div class="bar-row">
+            <div class="bar-label short">${esc(d.label)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${((d.value/maxVal)*100).toFixed(1)}%"></div></div>
+            <div class="bar-num">${d.value >= 1000 ? (d.value/1000).toFixed(1)+'k' : d.value}</div>
+          </div>`).join('');
       }
     }, 0);
   } else {
