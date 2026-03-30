@@ -240,6 +240,10 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div id="pie-all-sector" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
           <div id="pie-all-sector-footnote" style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5"></div>
         </div>
+        <div id="med-cell-city-all">
+          <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
+          <div id="pie-all-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+        </div>
       </div>`;
     setTimeout(() => {
       fetch(`/api/stats/medicaid-by-sector?datasets=${encodeURIComponent(dsParam)}`)
@@ -259,6 +263,18 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           });
           const fn = document.getElementById('pie-all-sector-footnote');
           if (fn && data.length > sliced.length) fn.textContent = `** Showing top 20 of ${data.length} sectors`;
+        });
+      fetch(`/api/stats/medicaid-by-city?datasets=${encodeURIComponent(dsParam)}`)
+        .then(r => r.json()).then(data => {
+          const el = document.getElementById('pie-all-city');
+          if (!el) return;
+          if (!data.length) { document.getElementById('med-cell-city-all')?.remove(); return; }
+          el.innerHTML = '';
+          drawPieChart('pie-all-city', data.slice(0, 20), null, {
+            unit: 'records',
+            centerLabel: 'cities',
+            legendFmt: (_v, pct) => pct + '%',
+          });
         });
     }, 0);
   } else {
