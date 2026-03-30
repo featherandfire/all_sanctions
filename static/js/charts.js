@@ -240,7 +240,7 @@ function drawStackedBarChart(containerId, sectors, states) {
   const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#64748b'];
   const margin = { top: 10, right: 16, bottom: 72, left: 50 };
   const totalW = container.clientWidth || 600;
-  const totalH = 280;
+  const totalH = 560;
   const w = totalW - margin.left - margin.right;
   const h = totalH - margin.top - margin.bottom;
 
