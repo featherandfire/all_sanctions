@@ -245,8 +245,9 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div id="pie-all-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
         </div>
         <div id="med-cell-state-all" style="grid-column:1/-1">
-          <div class="med-chart-label">Top Offenses by State</div>
+          <div class="med-chart-label">Top Offenses by State <span style="font-weight:400;color:var(--muted)">(top 5 sectors)</span></div>
           <div id="bar-all-states"></div>
+          <div id="bar-all-states-legend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--muted)"></div>
         </div>
         <div id="med-cell-year-all" style="grid-column:1/-1">
           <div class="med-chart-label">Exclusions by Year <span style="font-weight:400;color:var(--muted)">(first seen)</span></div>
@@ -284,15 +285,22 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
             legendFmt: (_v, pct) => pct + '%',
           });
         });
-      const _stateAbbrMap = Object.fromEntries(Object.entries(US_STATE_NAMES).map(([k, v]) => [v, k.toUpperCase()]));
-      const stateBarData = Object.entries(byState)
-        .map(([s, dsList]) => ({ label: _stateAbbrMap[s] || s, value: dsList.reduce((sum, d) => sum + (d.target_count || 0), 0) }))
-        .filter(d => d.value > 0)
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 25);
-      if (document.getElementById('bar-all-states') && stateBarData.length) {
-        drawBarChart('bar-all-states', stateBarData, '#4f8ef7');
-      }
+      fetch('/api/stats/medicaid-state-sectors')
+        .then(r => r.json()).then(({ sectors, states }) => {
+          const el = document.getElementById('bar-all-states');
+          if (!el || !states.length) return;
+          drawStackedBarChart('bar-all-states', sectors, states);
+          const legendEl = document.getElementById('bar-all-states-legend');
+          if (legendEl) {
+            const COLORS = ['#4f8ef7', '#3ecf8e', '#f6c90e', '#7c5cbf', '#f56565', '#64748b'];
+            legendEl.innerHTML = sectors.map((s, i) =>
+              `<span style="display:flex;align-items:center;gap:5px">
+                <span style="width:10px;height:10px;border-radius:2px;background:${COLORS[i]};flex-shrink:0"></span>
+                ${esc(s)}
+              </span>`
+            ).join('');
+          }
+        });
       fetch(`/api/stats/medicaid-by-year?datasets=${encodeURIComponent(dsParam)}`)
         .then(r => r.json()).then(data => {
           const el = document.getElementById('bar-all-year');

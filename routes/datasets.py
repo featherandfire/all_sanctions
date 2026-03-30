@@ -356,6 +356,54 @@ def api_medicaid_by_year():
     ))
 
 
+@datasets_bp.route("/api/stats/medicaid-state-sectors")
+def api_medicaid_state_sectors():
+    """Per-state breakdown of top 5 sectors for stacked bar chart."""
+    index = fetch_index()
+    ds_names = [
+        d["name"] for d in index["datasets"]
+        if "sector.usmed.debarment" in d.get("tags", [])
+        and not d.get("hidden") and not d.get("deprecated")
+    ]
+
+    def _state_abbr(name):
+        m = re.match(r'^us_([a-z]{2})_', name)
+        return m.group(1).upper() if m else 'FED'
+
+    batch = _get_entities_batch(ds_names)
+    state_sector = {}
+    sector_totals = Counter()
+
+    for name in ds_names:
+        abbr = _state_abbr(name)
+        if abbr not in state_sector:
+            state_sector[abbr] = Counter()
+        for row in batch.get(name, []):
+            raw = row.get("sector") or row.get("position") or row.get("title") or ""
+            for part in raw.split(","):
+                s = _normalize_sector(part)
+                if s:
+                    state_sector[abbr][s] += 1
+                    sector_totals[s] += 1
+
+    top5 = [s for s, _ in sector_totals.most_common(5)]
+    keys = top5 + ["Other"]
+
+    states_data = []
+    for abbr, counts in state_sector.items():
+        total = sum(counts.values())
+        if not total:
+            continue
+        entry = {"state": abbr, "total": total}
+        for s in top5:
+            entry[s] = counts.get(s, 0)
+        entry["Other"] = total - sum(counts.get(s, 0) for s in top5)
+        states_data.append(entry)
+
+    states_data.sort(key=lambda x: -x["total"])
+    return jsonify({"sectors": keys, "states": states_data[:25]})
+
+
 @datasets_bp.route("/api/stats/medicaid-by-zipcode")
 def api_medicaid_by_zipcode():
     """Zip code breakdown across one or more Medicaid datasets."""

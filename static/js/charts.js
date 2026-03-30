@@ -233,6 +233,62 @@ function drawPieChart(containerId, data, colors, opts) {
   });
 }
 
+function drawStackedBarChart(containerId, sectors, states) {
+  const container = document.getElementById(containerId);
+  if (!container || !states.length) return;
+
+  const COLORS = ['#4f8ef7', '#3ecf8e', '#f6c90e', '#7c5cbf', '#f56565', '#64748b'];
+  const margin = { top: 10, right: 16, bottom: 72, left: 50 };
+  const totalW = container.clientWidth || 600;
+  const totalH = 280;
+  const w = totalW - margin.left - margin.right;
+  const h = totalH - margin.top - margin.bottom;
+
+  const x = d3.scaleBand().domain(states.map(d => d.state)).range([0, w]).padding(0.25);
+  const y = d3.scaleLinear().domain([0, d3.max(states, d => d.total) * 1.08]).nice().range([h, 0]);
+  const layers = d3.stack().keys(sectors)(states);
+
+  const svg = d3.select(`#${containerId}`).append('svg')
+    .attr('width', totalW).attr('height', totalH)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  svg.append('g')
+    .call(d3.axisLeft(y).ticks(5).tickSize(-w).tickFormat(''))
+    .selectAll('line').style('stroke', '#2a2f3d').style('stroke-dasharray', '3,3');
+  svg.selectAll('.domain').remove();
+
+  svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(n => n >= 1000 ? (n/1000).toFixed(0)+'k' : n))
+    .selectAll('text').style('fill', '#64748b').style('font-size', '11px');
+  svg.selectAll('.tick line').style('display', 'none');
+
+  svg.append('g').attr('transform', `translate(0,${h})`).call(d3.axisBottom(x).tickSize(0))
+    .selectAll('text').style('fill', '#64748b').style('font-size', '11px')
+    .attr('transform', 'rotate(-38)').style('text-anchor', 'end');
+  svg.select('.domain').style('stroke', '#2a2f3d');
+
+  const tip = _ensureTooltip('stacked-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none');
+
+  layers.forEach((layer, i) => {
+    svg.selectAll(null).data(layer).enter().append('rect')
+      .attr('x', d => x(d.data.state))
+      .attr('y', d => y(d[1]))
+      .attr('height', d => Math.max(0, y(d[0]) - y(d[1])))
+      .attr('width', x.bandwidth())
+      .attr('fill', COLORS[i] || '#64748b')
+      .attr('opacity', 0.88)
+      .on('mousemove', function(event, d) {
+        const val = d[1] - d[0];
+        if (val <= 0) return;
+        tip.style.display = 'block';
+        tip.style.left = (event.clientX + 12) + 'px';
+        tip.style.top  = (event.clientY - 10) + 'px';
+        tip.innerHTML = `<strong>${esc(d.data.state)}</strong> — ${esc(sectors[i])}<br>${val.toLocaleString()} records`;
+        d3.select(this).attr('opacity', 1);
+      })
+      .on('mouseleave', function() { tip.style.display = 'none'; d3.select(this).attr('opacity', 0.88); });
+  });
+}
+
 function _drawMedicaidRateChart() {
   const el = document.getElementById('pie-medicaid-rate');
   if (!el || !_statsMeta || !_statsMeta.popData || !_statsMeta.medicaidByState) return;
