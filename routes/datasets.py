@@ -316,13 +316,25 @@ def _medicaid_counts(keys_fn):
 
 @datasets_bp.route("/api/stats/medicaid-date-coverage")
 def api_medicaid_date_coverage():
-    """Check how many records have each date field populated."""
-    rows = _medicaid_entities()
-    total = len(rows)
-    fields = ['first_seen', 'last_seen', 'last_change', 'sanction_startDate', 'sanction_listingDate']
+    """Check how many records have each date field populated, broken down by dataset."""
+    index = fetch_index()
+    ds_names = [
+        d["name"] for d in index["datasets"]
+        if "sector.usmed.debarment" in d.get("tags", [])
+        and not d.get("hidden") and not d.get("deprecated")
+    ]
+    by_dataset = {}
+    for name in ds_names:
+        rows = _get_entities(name)
+        by_dataset[name] = {
+            "total": len(rows),
+            "first_seen": sum(1 for r in rows if r.get("first_seen"))
+        }
+    states_with_first_seen = sum(1 for v in by_dataset.values() if v["first_seen"] > 0)
     return jsonify({
-        "total": total,
-        "coverage": {f: sum(1 for r in rows if r.get(f)) for f in fields}
+        "states_with_first_seen": states_with_first_seen,
+        "total_datasets": len(ds_names),
+        "by_dataset": by_dataset
     })
 
 
