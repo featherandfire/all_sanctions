@@ -386,7 +386,7 @@ def api_medicaid_state_sectors():
                     state_sector[abbr][s] += 1
                     sector_totals[s] += 1
 
-    top5 = [s for s, _ in sector_totals.most_common(15)]
+    top5 = [s for s, _ in sector_totals.most_common(20)]
     keys = top5 + ["Other"]
 
     states_data = []

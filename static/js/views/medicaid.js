@@ -245,7 +245,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div id="pie-all-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
         </div>
         <div id="med-cell-state-all" style="grid-column:1/-1">
-          <div class="med-chart-label">Top Offenses by State <span style="font-weight:400;color:var(--muted)">(top 5 sectors)</span></div>
+          <div class="med-chart-label">Top Offenses by State <span style="font-weight:400;color:var(--muted)">(top 20 sectors)</span></div>
           <div id="bar-all-states"></div>
           <div id="bar-all-states-legend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--muted)"></div>
         </div>
@@ -292,7 +292,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           drawStackedBarChart('bar-all-states', sectors, states);
           const legendEl = document.getElementById('bar-all-states-legend');
           if (legendEl) {
-            const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#64748b'];
+            const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#e11d48','#0891b2','#65a30d','#9333ea','#ea580c','#64748b'];
             legendEl.innerHTML = sectors.map((s, i) =>
               `<span style="display:flex;align-items:center;gap:5px">
                 <span style="width:10px;height:10px;border-radius:2px;background:${COLORS[i]};flex-shrink:0"></span>
