@@ -1,4 +1,4 @@
-let _cyberTab = 'datasets';   // 'datasets' | 'records'
+let _cyberTab = 'datasets';   // 'datasets' | 'records' | 'etherscan'
 let _cyberMeta = null;        // cached cyber API response
 let _cyberFilterTimer = null;
 let _cwFilterTimer = null;
@@ -22,6 +22,9 @@ async function renderCyberView(tab) {
       </button>
       <button onclick="renderCyberView('records')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_cyberTab==='records'?'var(--accent)':'transparent'};background:none;color:${_cyberTab==='records'?'var(--accent)':'var(--muted)'};cursor:pointer;font-weight:${_cyberTab==='records'?'600':'400'}">
         Records
+      </button>
+      <button onclick="renderCyberView('etherscan')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_cyberTab==='etherscan'?'var(--yellow)':'transparent'};background:none;color:${_cyberTab==='etherscan'?'var(--yellow)':'var(--muted)'};cursor:pointer;font-weight:${_cyberTab==='etherscan'?'600':'400'}">
+        ₿ Etherscan
       </button>
     </div>`;
 
@@ -70,6 +73,8 @@ async function renderCyberView(tab) {
 
     content.innerHTML = tabBar + statStrip + filterPills + `<div class="cards-grid" id="cyber-cards">${cards}</div>` + cryptoSection;
 
+  } else if (_cyberTab === 'etherscan') {
+    content.innerHTML = tabBar + renderEtherscanView();
   } else {
     // Records tab — full entity table from all cyber datasets
     content.innerHTML = tabBar + statStrip + `<div id="cyber-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading all records from cyber datasets… this may take a moment</div></div></div>`;
@@ -212,6 +217,109 @@ function renderCyberCard(ds) {
     </div>
     ${tags ? `<div class="card-tags" style="margin-top:8px">${tags}</div>` : ''}
   </div>`;
+}
+
+function renderEtherscanView() {
+  return `
+    <div style="max-width:700px">
+      <div style="margin-bottom:20px">
+        <div style="font-size:15px;font-weight:700;color:var(--yellow);margin-bottom:4px">₿ Etherscan Lookup</div>
+        <div style="font-size:12px;color:var(--muted)">Look up Ethereum addresses, transactions, and token transfers via the Etherscan API.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:24px">
+        <div style="position:relative;flex:1">
+          <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="etherscan-input" type="text" placeholder="Enter Ethereum address (0x…) or tx hash…"
+            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px 10px 34px;font-size:13px;color:var(--text);outline:none;font-family:monospace"
+            onkeydown="if(event.key==='Enter') etherscanLookup()">
+        </div>
+        <button onclick="etherscanLookup()"
+          style="padding:10px 20px;background:var(--yellow);color:#000;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0">
+          Look Up
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" id="etherscan-type-btns">
+        ${['balance','txlist','tokentx'].map((m, i) => {
+          const labels = { balance: 'ETH Balance', txlist: 'Transactions', tokentx: 'Token Transfers' };
+          return `<button class="etherscan-type-btn" data-module="${m}"
+            onclick="etherscanSetType('${m}')"
+            style="padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:${i===0?'var(--yellow)':'none'};color:${i===0?'#000':'var(--muted)'};font-size:12px;cursor:pointer">
+            ${labels[m]}
+          </button>`;
+        }).join('')}
+      </div>
+
+      <div id="etherscan-results"></div>
+    </div>`;
+}
+
+let _etherscanType = 'balance';
+
+function etherscanSetType(type) {
+  _etherscanType = type;
+  document.querySelectorAll('.etherscan-type-btn').forEach(btn => {
+    const active = btn.dataset.module === type;
+    btn.style.background = active ? 'var(--yellow)' : 'none';
+    btn.style.color = active ? '#000' : 'var(--muted)';
+  });
+}
+
+async function etherscanLookup() {
+  const address = document.getElementById('etherscan-input')?.value.trim();
+  const resultsEl = document.getElementById('etherscan-results');
+  if (!address || !resultsEl) return;
+
+  resultsEl.innerHTML = `<div class="loading"><div class="spinner"></div><div class="loading-text">Querying Etherscan…</div></div>`;
+
+  const params = new URLSearchParams({ module: 'account', action: _etherscanType, address, sort: 'desc' });
+  const res = await fetch(`/api/etherscan?${params}`);
+  const data = await res.json();
+
+  if (data.status === '0') {
+    resultsEl.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>${esc(data.message || 'No results')}</div></div>`;
+    return;
+  }
+
+  if (_etherscanType === 'balance') {
+    const eth = (parseFloat(data.result) / 1e18).toFixed(6);
+    resultsEl.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">ETH Balance</div>
+        <div style="font-size:28px;font-weight:700;color:var(--yellow)">${eth} ETH</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;font-family:monospace">${esc(address)}</div>
+      </div>`;
+    return;
+  }
+
+  const rows = Array.isArray(data.result) ? data.result : [];
+  if (!rows.length) {
+    resultsEl.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>No records found</div></div>`;
+    return;
+  }
+
+  const cols = _etherscanType === 'tokentx'
+    ? ['hash', 'tokenName', 'tokenSymbol', 'value', 'from', 'to', 'timeStamp']
+    : ['hash', 'value', 'from', 'to', 'isError', 'timeStamp'];
+
+  const thead = `<thead><tr>${cols.map(c => `<th style="padding:8px 12px;text-align:left;background:var(--surface2);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap">${c}</th>`).join('')}</tr></thead>`;
+  const tbody = `<tbody>${rows.slice(0, 100).map((r, i) => {
+    const bg = i % 2 === 0 ? 'var(--bg)' : 'var(--surface)';
+    const cells = cols.map(c => {
+      let val = r[c] || '';
+      if (c === 'value') val = (parseFloat(val) / 1e18).toFixed(6) + (_etherscanType === 'tokentx' ? ' ' + (r.tokenSymbol || '') : ' ETH');
+      if (c === 'timeStamp') val = new Date(parseInt(val) * 1000).toISOString().slice(0, 10);
+      if (c === 'hash' || c === 'from' || c === 'to') val = val.slice(0, 18) + '…';
+      if (c === 'isError') val = val === '1' ? '❌ Error' : '✓';
+      return `<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;font-family:monospace;white-space:nowrap">${esc(String(val))}</td>`;
+    }).join('');
+    return `<tr style="background:${bg}">${cells}</tr>`;
+  }).join('')}</tbody>`;
+
+  resultsEl.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${rows.length.toLocaleString()} records (showing first 100)</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div>`;
 }
 
 function cyberFilter(cat) {
