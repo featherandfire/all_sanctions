@@ -316,11 +316,18 @@ async function etherscanLookup() {
           ${ethPrice ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">ETH price: $${ethPrice.toLocaleString()}</div>` : ''}
         </div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Transaction Flow</div>
-      <div id="eth-flow-chart"></div>`;
+      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Address Flow Network</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px">
+        <span style="display:inline-block;width:11px;height:11px;background:#3498db;border-radius:50%;vertical-align:middle"></span> This address &nbsp;
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(39,174,96,1);border-radius:50%;vertical-align:middle"></span> Incoming &nbsp;
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(230,126,34,1);border-radius:50%;vertical-align:middle"></span> Outgoing &nbsp;
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(241,196,15,1);border-radius:50%;vertical-align:middle"></span> Contract Call &nbsp;
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(192,57,43,1);border-radius:2px;vertical-align:middle"></span> Failed
+      </p>
+      <div id="eth-flow-chart" style="height:420px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)"></div>`;
 
     const txs = Array.isArray(txData.result) ? txData.result : [];
-    _drawEthFlowChart('eth-flow-chart', address, txs);
+    _loadVisNetwork(() => _drawEthNetworkGraph('eth-flow-chart', address, txs));
     return;
   }
 
@@ -353,105 +360,94 @@ async function etherscanLookup() {
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div>`;
 }
 
-function _drawEthFlowChart(containerId, address, txs) {
+function _loadVisNetwork(cb) {
+  if (window.vis) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/vis-network@9/dist/vis-network.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+function _drawEthNetworkGraph(containerId, address, txs) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  const addrLower = address.toLowerCase();
-  const senderMap = {}, receiverMap = {};
-
-  txs.forEach(tx => {
-    const val = parseFloat(tx.value) / 1e18;
-    if (val <= 0 || tx.isError === '1') return;
-    if (tx.to?.toLowerCase() === addrLower) {
-      senderMap[tx.from] = (senderMap[tx.from] || 0) + val;
-    } else if (tx.from?.toLowerCase() === addrLower) {
-      receiverMap[tx.to] = (receiverMap[tx.to] || 0) + val;
-    }
-  });
-
-  const topSenders   = Object.entries(senderMap).sort((a,b) => b[1]-a[1]).slice(0, 8);
-  const topReceivers = Object.entries(receiverMap).sort((a,b) => b[1]-a[1]).slice(0, 8);
-
-  if (!topSenders.length && !topReceivers.length) {
-    container.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:12px 0">No transaction flow data found.</div>`;
+  if (!txs.length) {
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px">No transactions found for this address.</div>`;
     return;
   }
 
-  const totalW  = container.clientWidth || 800;
-  const colW    = 180;
-  const boxH    = 44;
-  const boxGap  = 10;
-  const nRows   = Math.max(topSenders.length, topReceivers.length, 1);
-  const totalH  = nRows * (boxH + boxGap) + 60;
-  const centerX = (totalW - colW) / 2;
-  const centerY = totalH / 2 - boxH / 2;
+  const addrLower = address.toLowerCase();
 
-  const _colPositions = (n) => {
-    const total = n * (boxH + boxGap) - boxGap;
-    const start = (totalH - total) / 2;
-    return Array.from({length: n}, (_, i) => start + i * (boxH + boxGap));
+  const COLOR = {
+    incoming: { solid: 'rgba(39,174,96,1)',  fill: 'rgba(39,174,96,0.8)'  },
+    outgoing: { solid: 'rgba(230,126,34,1)', fill: 'rgba(230,126,34,0.8)' },
+    failed:   { solid: 'rgba(192,57,43,1)',  fill: 'rgba(192,57,43,0.7)'  },
+    contract: { solid: 'rgba(241,196,15,1)', fill: 'rgba(241,196,15,0.8)' },
   };
 
-  const leftYs  = _colPositions(topSenders.length);
-  const rightYs = _colPositions(topReceivers.length);
-  const maxVal  = Math.max(...topSenders.map(([,v])=>v), ...topReceivers.map(([,v])=>v), 0.001);
+  const isContractCall = tx =>
+    parseFloat(tx.value) === 0 && tx.isError !== '1' && tx.from?.toLowerCase() === addrLower;
 
-  const svg = d3.select(`#${containerId}`).append('svg')
-    .attr('width', totalW).attr('height', totalH);
-
-  // Ribbons: senders → center
-  topSenders.forEach(([, val], i) => {
-    const sw = Math.max(1.5, (val / maxVal) * 14);
-    const x1 = colW, y1 = leftYs[i] + boxH / 2;
-    const x2 = centerX, y2 = centerY + boxH / 2;
-    const mx = (x1 + x2) / 2;
-    svg.append('path')
-      .attr('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`)
-      .attr('fill', 'none').attr('stroke', '#4f8ef7')
-      .attr('stroke-width', sw).attr('opacity', 0.35);
-  });
-
-  // Ribbons: center → receivers
-  topReceivers.forEach(([, val], i) => {
-    const sw = Math.max(1.5, (val / maxVal) * 14);
-    const x1 = centerX + colW, y1 = centerY + boxH / 2;
-    const x2 = totalW - colW, y2 = rightYs[i] + boxH / 2;
-    const mx = (x1 + x2) / 2;
-    svg.append('path')
-      .attr('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`)
-      .attr('fill', 'none').attr('stroke', '#3ecf8e')
-      .attr('stroke-width', sw).attr('opacity', 0.35);
-  });
-
-  const g = svg.append('g');
-
-  function drawBox(x, y, topLine, bottomLine, color) {
-    g.append('rect').attr('x', x).attr('y', y).attr('width', colW).attr('height', boxH)
-      .attr('fill', color + '15').attr('stroke', color).attr('stroke-width', 1).attr('rx', 5);
-    g.append('text').attr('x', x + colW/2).attr('y', y + 16).attr('text-anchor', 'middle')
-      .style('font-size', '10px').style('fill', color).style('font-weight', '600')
-      .text(topLine);
-    g.append('text').attr('x', x + colW/2).attr('y', y + 31).attr('text-anchor', 'middle')
-      .style('font-size', '9px').style('fill', '#64748b').style('font-family', 'monospace')
-      .text(bottomLine);
+  function txColor(tx) {
+    if (tx.isError === '1')      return COLOR.failed;
+    if (isContractCall(tx))      return COLOR.contract;
+    return tx.from?.toLowerCase() === addrLower ? COLOR.outgoing : COLOR.incoming;
   }
 
-  // Column headers
-  const headerY = 6;
-  ['Senders', 'Queried Address', 'Recipients'].forEach((label, i) => {
-    const x = i === 0 ? 0 : i === 1 ? centerX : totalW - colW;
-    g.append('text').attr('x', x + colW/2).attr('y', headerY + 10).attr('text-anchor', 'middle')
-      .style('font-size', '10px').style('fill', '#64748b').style('font-weight', '600')
-      .style('text-transform', 'uppercase').style('letter-spacing', '0.5px').text(label);
+  const nodesMap = new Map();
+  const edges = [];
+
+  // Center node
+  nodesMap.set(addrLower, {
+    id: addrLower,
+    label: addrLower.slice(0,6) + '…' + addrLower.slice(-4),
+    title: address,
+    color: { background: '#3498db', border: '#2471a3', highlight: { background: '#5dade2', border: '#2471a3' } },
+    shape: 'dot', size: 22, font: { color: '#e2e8f0', size: 11 }
   });
 
-  topSenders.forEach(([addr, val], i) => {
-    drawBox(0, leftYs[i], addr.slice(0,10)+'…'+addr.slice(-6), val.toFixed(4)+' ETH in', '#4f8ef7');
+  txs.slice(0, 100).forEach(tx => {
+    const from = tx.from?.toLowerCase();
+    const to   = tx.to?.toLowerCase();
+    if (!from || !to) return;
+    const val = parseFloat(tx.value) / 1e18;
+    const c = txColor(tx);
+    const counterparty = from === addrLower ? to : from;
+
+    if (!nodesMap.has(counterparty)) {
+      nodesMap.set(counterparty, {
+        id: counterparty,
+        label: counterparty.slice(0,6) + '…' + counterparty.slice(-4),
+        title: counterparty,
+        color: { background: c.fill, border: c.solid, highlight: { background: c.fill, border: c.solid } },
+        shape: 'dot', size: 12, font: { color: '#e2e8f0', size: 10 }
+      });
+    }
+
+    edges.push({
+      from, to,
+      arrows: 'to',
+      color: { color: c.solid, opacity: 0.7 },
+      title: `${val.toFixed(6)} ETH${tx.isError === '1' ? ' (FAILED)' : ''}`,
+      width: Math.max(1, Math.min(6, val * 2)),
+      smooth: { type: 'curvedCW', roundness: 0.2 },
+    });
   });
-  drawBox(centerX, centerY, address.slice(0,10)+'…'+address.slice(-6), 'queried address', '#f6c90e');
-  topReceivers.forEach(([addr, val], i) => {
-    drawBox(totalW - colW, rightYs[i], addr.slice(0,10)+'…'+addr.slice(-6), val.toFixed(4)+' ETH out', '#3ecf8e');
+
+  const data = {
+    nodes: new vis.DataSet([...nodesMap.values()]),
+    edges: new vis.DataSet(edges),
+  };
+
+  new vis.Network(container, data, {
+    physics: {
+      stabilization: { iterations: 150 },
+      barnesHut: { gravitationalConstant: -8000, springLength: 140 },
+    },
+    interaction: { hover: true, tooltipDelay: 100 },
+    nodes: { borderWidth: 1.5 },
+    edges: { arrows: { to: { scaleFactor: 0.6 } } },
   });
 }
 
