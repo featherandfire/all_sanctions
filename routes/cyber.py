@@ -7,8 +7,17 @@ Constants: CYBER_TITLE_KEYWORDS, CYBER_DESC_KEYWORDS, CYBER_TAGS, CYBER_NAME_ALL
 
 import json
 import os
+import sys
 from flask import Blueprint, jsonify, request
 from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch
+
+# Ensure the project root is on the path so config.py is always importable
+# regardless of gunicorn's working directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from config import ETHERSCAN_API_KEY
+except ImportError:
+    ETHERSCAN_API_KEY = ""
 
 _NOTES_PATH = os.path.join(os.path.dirname(__file__), '..', 'cyber_notes.json')
 
@@ -419,8 +428,4 @@ def api_notes_put(note_id):
 @cyber_bp.route("/api/etherscan-key")
 def api_etherscan_key():
     """Return the Etherscan API key for direct browser calls."""
-    try:
-        from config import ETHERSCAN_API_KEY
-    except ImportError:
-        ETHERSCAN_API_KEY = ""
     return jsonify({"key": ETHERSCAN_API_KEY})
