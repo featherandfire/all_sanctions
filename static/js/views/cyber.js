@@ -280,10 +280,10 @@ async function etherscanLookup() {
     _etherscanKey = kd.key || '';
   }
 
-  const baseParams = { module: 'account', action: _etherscanType, address, apikey: _etherscanKey };
+  const baseParams = { chainid: '1', module: 'account', action: _etherscanType, address, apikey: _etherscanKey };
   if (_etherscanType === 'balance') baseParams.tag = 'latest';
   else baseParams.sort = 'desc';
-  const res = await fetch(`https://api.etherscan.io/api?${new URLSearchParams(baseParams)}`);
+  const res = await fetch(`https://api.etherscan.io/v2/api?${new URLSearchParams(baseParams)}`);
   const data = await res.json();
 
   if (data.status === '0' && data.message !== 'No transactions found') {
