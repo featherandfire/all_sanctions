@@ -1,4 +1,4 @@
-let _cyberTab = 'datasets';   // 'datasets' | 'records' | 'etherscan'
+let _cyberTab = 'datasets';   // 'datasets' | 'records' | 'crypto' | 'etherscan'
 let _cyberMeta = null;        // cached cyber API response
 let _cyberFilterTimer = null;
 let _cwFilterTimer = null;
@@ -22,6 +22,9 @@ async function renderCyberView(tab) {
       </button>
       <button onclick="renderCyberView('records')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_cyberTab==='records'?'var(--accent)':'transparent'};background:none;color:${_cyberTab==='records'?'var(--accent)':'var(--muted)'};cursor:pointer;font-weight:${_cyberTab==='records'?'600':'400'}">
         Records
+      </button>
+      <button onclick="renderCyberView('crypto')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_cyberTab==='crypto'?'var(--yellow)':'transparent'};background:none;color:${_cyberTab==='crypto'?'var(--yellow)':'var(--muted)'};cursor:pointer;font-weight:${_cyberTab==='crypto'?'600':'400'}">
+        ₿ Crypto Addresses
       </button>
       <button onclick="renderCyberView('etherscan')" style="padding:8px 18px;font-size:13px;border:none;border-bottom:2px solid ${_cyberTab==='etherscan'?'var(--yellow)':'transparent'};background:none;color:${_cyberTab==='etherscan'?'var(--yellow)':'var(--muted)'};cursor:pointer;font-weight:${_cyberTab==='etherscan'?'600':'400'}">
         ₿ Etherscan
@@ -56,23 +59,23 @@ async function renderCyberView(tab) {
 
     const cards = datasets.map(ds => renderCyberCard(ds)).join('');
 
-    const cryptoSection = `
-      <div id="crypto-wallets-section" style="margin-top:32px;border-top:1px solid var(--border);padding-top:24px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--yellow)">₿ Crypto Address Records from Sanctions Lists</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px">CryptoWallet entities extracted from OFAC SDN, UN, EU, UK, and more</div>
-          </div>
-          <button id="load-crypto-btn" onclick="loadCryptoWallets()"
-            style="margin-left:auto;padding:7px 16px;background:var(--yellow);color:#000;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer">
-            Load Crypto Addresses
-          </button>
+    content.innerHTML = tabBar + statStrip + filterPills + `<div class="cards-grid" id="cyber-cards">${cards}</div>`;
+
+  } else if (_cyberTab === 'crypto') {
+    content.innerHTML = tabBar + `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--yellow)">₿ Crypto Address Records from Sanctions Lists</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">CryptoWallet entities extracted from OFAC SDN, UN, EU, UK, and more</div>
         </div>
-        <div id="crypto-wallets-body"></div>
-      </div>`;
-
-    content.innerHTML = tabBar + statStrip + filterPills + `<div class="cards-grid" id="cyber-cards">${cards}</div>` + cryptoSection;
-
+        <div style="margin-left:auto;position:relative">
+          <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="cw-search" type="text" placeholder="Filter addresses…" oninput="filterCryptoWallets(this.value, window.cryptoWalletData)"
+            style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px 7px 28px;font-size:12px;color:var(--text);outline:none;width:220px">
+        </div>
+      </div>
+      <div id="crypto-wallets-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading crypto address records…</div></div></div>`;
+    loadCryptoWallets();
   } else if (_cyberTab === 'etherscan') {
     content.innerHTML = tabBar + renderEtherscanView();
   } else {
@@ -131,57 +134,52 @@ function filterCyberRecords(q) {
 }
 
 async function loadCryptoWallets() {
-  const btn = document.getElementById('load-crypto-btn');
   const body = document.getElementById('crypto-wallets-body');
-  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-  body.innerHTML = `<div class="loading"><div class="spinner"></div><div class="loading-text">Scanning datasets for crypto wallet records… (may take a moment on first load)</div></div>`;
+  if (!body) return;
+
+  if (window.cryptoWalletData) {
+    const { results, cols } = window.cryptoWalletData;
+    body.innerHTML = _cryptoTableHTML(results, cols, results.length);
+    return;
+  }
 
   const res = await fetch('/api/crypto-wallets');
   const data = await res.json();
-
-  if (btn) btn.style.display = 'none';
 
   if (!data.results.length) {
     body.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>No crypto wallet records found</div></div>`;
     return;
   }
 
-  // Columns to show for crypto wallet records
   const CRYPTO_COLS = ['schema', 'caption', 'publicKey', 'currency', 'holder', 'holder_alias',
     'sanction_authority', 'sanction_program', 'sanction_country', 'sanction_startDate',
     'sanction_reason', 'sanction_sourceUrl', '_dataset', 'first_seen', 'id'];
   const allKeys = new Set(data.results.flatMap(r => Object.keys(r)));
   const cols = CRYPTO_COLS.filter(k => allKeys.has(k));
-  // Append any remaining keys not in the priority list
   allKeys.forEach(k => { if (!cols.includes(k)) cols.push(k); });
 
-  // Search bar + count header
-  const header = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--muted)">
-        <strong style="color:var(--text)">${data.results.length.toLocaleString()}</strong> crypto address records across
-        <strong style="color:var(--text)">${data.searched.length}</strong> datasets
-      </span>
-      <div style="position:relative;margin-left:auto">
-        <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="cw-search" type="text" placeholder="Filter addresses…" oninput="filterCryptoWallets(this.value, cryptoWalletData)"
-          style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px 6px 28px;font-size:12px;color:var(--text);outline:none;width:200px">
-      </div>
-    </div>`;
+  window.cryptoWalletData = { results: data.results, cols, total: data.results.length, searched: data.searched };
+  body.innerHTML = _cryptoTableHTML(data.results, cols, data.results.length, data.searched);
+}
 
-  window.cryptoWalletData = { results: data.results, cols };
-  body.innerHTML = header + `<div style="overflow-x:auto"><table id="cw-table" style="width:100%;border-collapse:collapse;font-size:12px">${buildCryptoTable(data.results, cols)}</table></div>`;
+function _cryptoTableHTML(results, cols, total, searched) {
+  const countLine = `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+    <strong style="color:var(--text)">${total.toLocaleString()}</strong> crypto address records
+    ${searched ? `across <strong style="color:var(--text)">${searched.length}</strong> datasets` : ''}
+  </div>`;
+  return countLine + `<div style="overflow-x:auto"><table id="cw-table" style="width:100%;border-collapse:collapse;font-size:12px">${buildCryptoTable(results, cols)}</table></div>`;
 }
 
 function filterCryptoWallets(q, data) {
   clearTimeout(_cwFilterTimer);
   _cwFilterTimer = setTimeout(() => {
+    if (!data) return;
     const lower = q.toLowerCase().trim();
     const filtered = lower
       ? data.results.filter(r => Object.values(r).some(v => v && String(v).toLowerCase().includes(lower)))
       : data.results;
-    const tbl = document.getElementById('cw-table');
-    if (tbl) tbl.innerHTML = buildCryptoTable(filtered, data.cols);
+    const body = document.getElementById('crypto-wallets-body');
+    if (body) body.innerHTML = _cryptoTableHTML(filtered, data.cols, filtered.length);
   }, 200);
 }
 
