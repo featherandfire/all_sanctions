@@ -280,12 +280,14 @@ async function etherscanLookup() {
     _etherscanKey = kd.key || '';
   }
 
-  const params = new URLSearchParams({ module: 'account', action: _etherscanType, address, sort: 'desc', apikey: _etherscanKey });
-  const res = await fetch(`https://api.etherscan.io/api?${params}`);
+  const baseParams = { module: 'account', action: _etherscanType, address, apikey: _etherscanKey };
+  if (_etherscanType === 'balance') baseParams.tag = 'latest';
+  else baseParams.sort = 'desc';
+  const res = await fetch(`https://api.etherscan.io/api?${new URLSearchParams(baseParams)}`);
   const data = await res.json();
 
-  if (data.status === '0') {
-    resultsEl.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>${esc(data.message || 'No results')}</div></div>`;
+  if (data.status === '0' && data.message !== 'No transactions found') {
+    resultsEl.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>${esc(data.message || 'No results')}</div><div style="font-size:11px;color:var(--muted);margin-top:6px;font-family:monospace">${esc(String(data.result || ''))}</div></div>`;
     return;
   }
 
