@@ -293,19 +293,11 @@ def api_cyber_records():
     return jsonify({"results": results, "searched": searched, "total": len(results)})
 
 
-@cyber_bp.route("/api/etherscan")
-def api_etherscan():
-    """Proxy for Etherscan API."""
-    import requests as req
+@cyber_bp.route("/api/etherscan-key")
+def api_etherscan_key():
+    """Return the Etherscan API key for direct browser calls."""
     try:
         from config import ETHERSCAN_API_KEY
     except ImportError:
         ETHERSCAN_API_KEY = ""
-    params = dict(request.args)
-    if ETHERSCAN_API_KEY:
-        params["apikey"] = ETHERSCAN_API_KEY
-    try:
-        resp = req.get("https://api.etherscan.io/api", params=params, timeout=15)
-        return jsonify(resp.json())
-    except Exception as e:
-        return jsonify({"status": "0", "message": str(e), "result": []}), 502
+    return jsonify({"key": ETHERSCAN_API_KEY})

@@ -256,6 +256,7 @@ function renderEtherscanView() {
 }
 
 let _etherscanType = 'balance';
+let _etherscanKey = null;
 
 function etherscanSetType(type) {
   _etherscanType = type;
@@ -273,8 +274,14 @@ async function etherscanLookup() {
 
   resultsEl.innerHTML = `<div class="loading"><div class="spinner"></div><div class="loading-text">Querying Etherscan…</div></div>`;
 
-  const params = new URLSearchParams({ module: 'account', action: _etherscanType, address, sort: 'desc' });
-  const res = await fetch(`/api/etherscan?${params}`);
+  if (!_etherscanKey) {
+    const kr = await fetch('/api/etherscan-key');
+    const kd = await kr.json();
+    _etherscanKey = kd.key || '';
+  }
+
+  const params = new URLSearchParams({ module: 'account', action: _etherscanType, address, sort: 'desc', apikey: _etherscanKey });
+  const res = await fetch(`https://api.etherscan.io/api?${params}`);
   const data = await res.json();
 
   if (data.status === '0') {
