@@ -291,18 +291,160 @@ async function etherscanLookup() {
 
   if (_etherscanType === 'balance') {
     const eth = parseFloat(data.result) / 1e18;
+    const addrLower = address.toLowerCase();
     const apiBase = `https://api.etherscan.io/v2/api?${new URLSearchParams({chainid:'1', apikey:_etherscanKey})}`;
-    const [priceRes, txRes] = await Promise.all([
+    const [priceRes, txRes, sanctionsRes] = await Promise.all([
       fetch(`${apiBase}&module=stats&action=ethprice`),
-      fetch(`${apiBase}&module=account&action=txlist&address=${encodeURIComponent(address)}&sort=desc`)
+      fetch(`${apiBase}&module=account&action=txlist&address=${encodeURIComponent(address)}&sort=desc&offset=100`),
+      fetch(`/api/sanctions-check?address=${encodeURIComponent(address.toLowerCase())}`)
     ]);
-    const priceData = await priceRes.json();
-    const txData = await txRes.json();
+    const priceData    = await priceRes.json();
+    const txDataRaw    = await txRes.json();
+    const sanctionsData = await sanctionsRes.json();
     const ethPrice = parseFloat(priceData.result?.ethusd || 0);
     const usd = ethPrice ? (eth * ethPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : '—';
+    const rawTxs = Array.isArray(txDataRaw.result) ? txDataRaw.result : [];
+    const fmt = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const COLOR = {
+      incoming: { solid: 'rgba(39,174,96,1)',  fill: 'rgba(39,174,96,0.65)'  },
+      outgoing: { solid: 'rgba(230,126,34,1)', fill: 'rgba(230,126,34,0.65)' },
+      failed:   { solid: 'rgba(192,57,43,1)',  fill: 'rgba(192,57,43,0.55)'  },
+      contract: { solid: 'rgba(241,196,15,1)', fill: 'rgba(241,196,15,0.65)' },
+    };
+
+    // Normalize Etherscan fields
+    const txNorm = rawTxs.map(tx => ({
+      hash:         tx.hash,
+      timestamp:    parseInt(tx.timeStamp),
+      value_eth:    parseFloat(tx.value) / 1e18,
+      from_address: (tx.from || '').toLowerCase(),
+      to_address:   (tx.to  || '').toLowerCase(),
+      is_error:     tx.isError === '1',
+      gas_fee_eth:  (parseInt(tx.gasUsed || 0) * parseInt(tx.gasPrice || 0)) / 1e18,
+    }));
+
+    // Compute senders list up front so we can use it in the HTML
+    const _senders = {};
+    txNorm.forEach(tx => {
+      if (tx.is_error || tx.to_address !== addrLower || tx.from_address === addrLower || tx.value_eth === 0) return;
+      if (!_senders[tx.from_address]) _senders[tx.from_address] = { usd: 0, eth: 0, txCount: 0 };
+      _senders[tx.from_address].usd     += tx.value_eth * ethPrice;
+      _senders[tx.from_address].eth     += tx.value_eth;
+      _senders[tx.from_address].txCount += 1;
+    });
+    const senderList = Object.entries(_senders).sort((a, b) => b[1].usd - a[1].usd);
+
+    const legend = `
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+        <span style="display:inline-block;width:10px;height:10px;background:${COLOR.incoming.fill};border-radius:2px;vertical-align:middle"></span>&nbsp;Incoming&nbsp;&nbsp;
+        <span style="display:inline-block;width:10px;height:10px;background:${COLOR.outgoing.fill};border-radius:2px;vertical-align:middle"></span>&nbsp;Outgoing&nbsp;&nbsp;
+        <span style="display:inline-block;width:10px;height:10px;background:${COLOR.contract.fill};border-radius:2px;vertical-align:middle"></span>&nbsp;Contract Call&nbsp;&nbsp;
+        <span style="display:inline-block;width:10px;height:10px;background:${COLOR.failed.fill};border-radius:2px;vertical-align:middle"></span>&nbsp;Failed
+      </div>`;
+
+    const panel = (title, subtitle, id, body, open = true) => `
+      <details ${open ? 'open' : ''} style="margin-bottom:12px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <summary style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface2);cursor:pointer;user-select:none;list-style:none;gap:8px">
+          <div>
+            <span style="font-size:13px;font-weight:600;color:var(--text)">${title}</span>
+            ${subtitle ? `<span style="font-size:11px;color:var(--muted);margin-left:8px">${subtitle}</span>` : ''}
+          </div>
+          <span class="panel-chevron" style="font-size:12px;color:var(--muted);transition:transform .2s">▾</span>
+        </summary>
+        <div id="${id}" style="padding:16px">${body}</div>
+      </details>`;
+
+    const sendersRows = senderList.length
+      ? senderList.map(([ addr, d ], i) => {
+          const bg = i % 2 === 0 ? 'var(--bg)' : 'var(--surface)';
+          return `<tr style="background:${bg}">
+            <td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;font-family:monospace;word-break:break-all">${addr}</td>
+            <td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;color:${COLOR.incoming.solid};font-weight:600">${fmt(d.usd)}</td>
+            <td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${d.eth.toFixed(6)} ETH</td>
+            <td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;text-align:center">${d.txCount}</td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--muted);font-size:12px">No incoming value transactions found</td></tr>`;
+
+    const sendersTable = `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            ${['Sender Address','Total USD Sent','Total ETH Sent','Tx Count'].map(h =>
+              `<th style="padding:8px 12px;text-align:left;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border)">${h}</th>`
+            ).join('')}
+          </tr></thead>
+          <tbody>${sendersRows}</tbody>
+        </table>
+      </div>`;
+
+    const sanctioned = sanctionsData.sanctioned;
+    const sMatches   = sanctionsData.matches || [];
+    const DATASET_LABELS = {
+      us_ofac_sdn:            'OFAC SDN',
+      us_ofac_cons:           'OFAC Consolidated',
+      un_sc_sanctions:        'UN Security Council',
+      eu_sanctions_map:       'EU Sanctions Map',
+      gb_hmt_sanctions:       'UK HMT',
+      gb_fcdo_sanctions:      'UK FCDO',
+      ch_seco_sanctions:      'Switzerland SECO',
+      us_fbi_lazarus_crypto:  'FBI Lazarus Group',
+      il_mod_crypto:          'Israel MoD',
+      ransomwhere:            'Ransomwhere',
+      ua_nsdc_sanctions:      'Ukraine NSDC',
+      ca_dfatd_sema_sanctions:'Canada SEMA',
+    };
+    const sanctionsTile = sanctioned ? `
+      <div style="background:#1a0a0a;border:2px solid #c0392b;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <span style="font-size:20px">⚠️</span>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:#e74c3c">SANCTIONED ADDRESS</div>
+            <div style="font-size:11px;color:#c0392b;margin-top:1px">This address appears on ${sMatches.length} sanctions list${sMatches.length !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${sMatches.map(m => `
+            <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.3);border-radius:6px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
+              <div style="min-width:140px">
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">List</div>
+                <div style="font-size:13px;font-weight:600;color:#e74c3c">${esc(DATASET_LABELS[m.dataset] || m.dataset)}</div>
+              </div>
+              ${m.holder ? `<div style="min-width:160px">
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Holder</div>
+                <div style="font-size:12px;color:#e2e8f0">${esc(m.holder)}</div>
+              </div>` : ''}
+              ${m.currency ? `<div>
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Currency</div>
+                <div style="font-size:12px;color:#e2e8f0">${esc(m.currency)}</div>
+              </div>` : ''}
+              ${m.sanction_program ? `<div style="min-width:160px">
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Program</div>
+                <div style="font-size:12px;color:#e2e8f0">${esc(m.sanction_program)}</div>
+              </div>` : ''}
+              ${m.sanction_reason ? `<div style="flex:1;min-width:200px">
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Reason</div>
+                <div style="font-size:11px;color:#e2e8f0">${esc(m.sanction_reason)}</div>
+              </div>` : ''}
+              ${m.first_seen ? `<div>
+                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">First Seen</div>
+                <div style="font-size:12px;color:#e2e8f0">${esc(m.first_seen)}</div>
+              </div>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>` : `
+      <div style="background:#0a1a0f;border:1px solid #27ae60;border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">✅</span>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#2ecc71">Not found on sanctions lists</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Checked against 12 lists including OFAC SDN, UN, EU, UK, and more</div>
+        </div>
+      </div>`;
 
     resultsEl.innerHTML = `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:24px;display:flex;gap:32px;flex-wrap:wrap">
+      ${sanctionsTile}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;display:flex;gap:32px;flex-wrap:wrap">
         <div>
           <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">ETH Balance</div>
           <div style="font-size:28px;font-weight:700;color:var(--yellow)">${eth.toFixed(6)} ETH</div>
@@ -316,18 +458,71 @@ async function etherscanLookup() {
           ${ethPrice ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">ETH price: $${ethPrice.toLocaleString()}</div>` : ''}
         </div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Address Flow Network</div>
-      <p style="font-size:11px;color:var(--muted);margin-bottom:10px">
-        <span style="display:inline-block;width:11px;height:11px;background:#3498db;border-radius:50%;vertical-align:middle"></span> This address &nbsp;
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(39,174,96,1);border-radius:50%;vertical-align:middle"></span> Incoming &nbsp;
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(230,126,34,1);border-radius:50%;vertical-align:middle"></span> Outgoing &nbsp;
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(241,196,15,1);border-radius:50%;vertical-align:middle"></span> Contract Call &nbsp;
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(192,57,43,1);border-radius:2px;vertical-align:middle"></span> Failed
-      </p>
-      <div id="eth-flow-chart" style="height:420px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)"></div>`;
 
-    const txs = Array.isArray(txData.result) ? txData.result : [];
-    _loadVisNetwork(() => _drawEthNetworkGraph('eth-flow-chart', address, txs));
+      ${rawTxs.length ? `
+        ${panel('Transaction Activity', `${rawTxs.length} most recent · ${legend}`, 'panel-activity',
+          `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+            <div>
+              <div style="font-size:10px;color:var(--muted);margin-bottom:6px">USD VALUE PER TRANSACTION</div>
+              <canvas id="barChart" height="180"></canvas>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--muted);margin-bottom:6px">CUMULATIVE USD FLOW</div>
+              <canvas id="lineChart" height="180"></canvas>
+            </div>
+          </div>`
+        )}
+
+        ${panel('Transaction Timeline', '↑ incoming  ↓ outgoing', 'panel-timeline',
+          `<canvas id="timelineChart" height="160"></canvas>`
+        )}
+
+        ${panel('Wallets That Sent Funds', `${senderList.length} unique sender${senderList.length !== 1 ? 's' : ''}`, 'panel-senders', sendersTable)}
+
+        ${panel('Address Flow Network', `
+          <span style="display:inline-block;width:10px;height:10px;background:#3498db;border-radius:50%;vertical-align:middle"></span>&nbsp;This address&nbsp;
+          <span style="display:inline-block;width:10px;height:10px;background:${COLOR.incoming.solid};border-radius:50%;vertical-align:middle"></span>&nbsp;Incoming&nbsp;
+          <span style="display:inline-block;width:10px;height:10px;background:${COLOR.outgoing.solid};border-radius:50%;vertical-align:middle"></span>&nbsp;Outgoing&nbsp;
+          <span style="display:inline-block;width:10px;height:10px;background:${COLOR.contract.solid};border-radius:50%;vertical-align:middle"></span>&nbsp;Contract Call&nbsp;
+          <span style="display:inline-block;width:10px;height:10px;background:${COLOR.failed.solid};border-radius:2px;vertical-align:middle"></span>&nbsp;Failed`,
+          'panel-network',
+          `<div id="eth-flow-chart" style="height:420px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)"></div>`
+        )}
+
+        ${panel('Address Flow', 'Senders → Address → Recipients · arrow width = USD · hover for details', 'panel-flow',
+          `<div style="overflow-x:auto"><svg id="flowColumns"></svg></div>`
+        )}
+
+        ${panel('Transaction History', `${txNorm.length} transactions`, 'panel-txhistory',
+          `<div id="eth-tx-table"></div>`
+        )}
+      ` : ''}`;
+
+    // Animate chevrons on open/close
+    resultsEl.querySelectorAll('details').forEach(det => {
+      const chev = det.querySelector('.panel-chevron');
+      if (chev) chev.style.transform = det.open ? 'rotate(0deg)' : 'rotate(-90deg)';
+      det.addEventListener('toggle', () => {
+        if (chev) chev.style.transform = det.open ? 'rotate(0deg)' : 'rotate(-90deg)';
+      });
+    });
+
+    if (rawTxs.length) {
+      _loadChartJs(() => _drawEthCharts(addrLower, txNorm, ethPrice, COLOR, fmt));
+      _drawFlowColumns('flowColumns', addrLower, txNorm, ethPrice, fmt, eth, usd);
+
+      // Batch-check all counterparty addresses for sanctions hits, then render table
+      const counterparties = [...new Set(txNorm.flatMap(tx => [tx.from_address, tx.to_address]).filter(Boolean))];
+      fetch('/api/sanctions-check-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresses: counterparties }),
+      })
+        .then(r => r.json())
+        .then(({ hits }) => _drawTxTable('eth-tx-table', addrLower, txNorm, ethPrice, fmt, COLOR, hits || {}))
+        .catch(() =>         _drawTxTable('eth-tx-table', addrLower, txNorm, ethPrice, fmt, COLOR, {}));
+    }
+    _loadVisNetwork(() => _drawEthNetworkGraph('eth-flow-chart', address, rawTxs));
     return;
   }
 
@@ -358,6 +553,294 @@ async function etherscanLookup() {
   resultsEl.innerHTML = `
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${rows.length.toLocaleString()} records (showing first 100)</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div>`;
+}
+
+function _loadChartJs(cb) {
+  if (window.Chart) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+  s.onload = () => {
+    // date-fns adapter needed for the timeline x-axis
+    const s2 = document.createElement('script');
+    s2.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js';
+    s2.onload = cb;
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s);
+}
+
+function _drawEthCharts(addrLower, txNorm, ethPrice, COLOR, fmt) {
+  const isCC = tx => tx.value_eth === 0 && !tx.is_error && tx.from_address === addrLower;
+  const fillOf = tx => {
+    if (tx.is_error) return COLOR.failed.fill;
+    if (isCC(tx))    return COLOR.contract.fill;
+    return tx.from_address === addrLower ? COLOR.outgoing.fill : COLOR.incoming.fill;
+  };
+
+  const ordered = [...txNorm].reverse();
+  const labels    = ordered.map(tx => new Date(tx.timestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+  const usdValues = ordered.map(tx => parseFloat((tx.value_eth * ethPrice).toFixed(2)));
+  const barColors = ordered.map(tx => fillOf(tx));
+
+  let running = 0;
+  const cumulative = ordered.map(tx => {
+    if (!tx.is_error) {
+      const usd = tx.value_eth * ethPrice;
+      running += tx.from_address === addrLower ? -usd : usd;
+    }
+    return parseFloat(running.toFixed(2));
+  });
+
+  const scaleOpts = (yLabel) => ({
+    y: { ticks: { callback: v => '$' + v.toLocaleString(), font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.1)' }, title: yLabel ? { display: true, text: yLabel, font: { size: 10 } } : undefined },
+    x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { color: 'rgba(128,128,128,0.1)' } },
+  });
+
+  const barEl  = document.getElementById('barChart');
+  const lineEl = document.getElementById('lineChart');
+  const tlEl   = document.getElementById('timelineChart');
+  if (!barEl || !lineEl || !tlEl) return;
+
+  new Chart(barEl, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: usdValues, backgroundColor: barColors, borderRadius: 3 }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmt(ctx.raw) } } }, scales: scaleOpts() },
+  });
+
+  new Chart(lineEl, {
+    type: 'line',
+    data: { labels, datasets: [{ data: cumulative, borderColor: COLOR.incoming.solid, backgroundColor: 'rgba(39,174,96,0.1)', pointBackgroundColor: ordered.map(tx => fillOf(tx)), fill: true, tension: 0.3, pointRadius: 3 }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmt(ctx.raw) } } }, scales: scaleOpts() },
+  });
+
+  // Timeline bubble — outgoing plotted as negative y so direction is visible
+  const buckets = { incoming: [], outgoing: [], contract: [], failed: [] };
+  txNorm.forEach(tx => {
+    const absUsd = parseFloat((tx.value_eth * ethPrice).toFixed(2));
+    const isOut  = tx.from_address === addrLower;
+    const p = { x: new Date(tx.timestamp * 1000), y: isOut ? -absUsd : absUsd, absUsd, hash: tx.hash, from: tx.from_address, to: tx.to_address };
+    if (tx.is_error)   buckets.failed.push(p);
+    else if (isCC(tx)) buckets.contract.push(p);
+    else if (isOut)    buckets.outgoing.push(p);
+    else               buckets.incoming.push(p);
+  });
+
+  const r = p => Math.max(4, Math.min(18, Math.sqrt((Math.abs(p.y) || 1) / 10) + 4));
+  const tlTip = ctx => {
+    const p = ctx.raw;
+    const dir = p.y < 0 ? 'Sent' : 'Received';
+    return [`${dir}: ${fmt(Math.abs(p.y))}`, `From: ${p.from.slice(0,10)}…`, `To: ${p.to ? p.to.slice(0,10) + '…' : '—'}`, `Tx: ${p.hash.slice(0,12)}…`];
+  };
+
+  new Chart(tlEl, {
+    type: 'bubble',
+    data: {
+      datasets: [
+        { label: 'Incoming', data: buckets.incoming.map(p => ({ ...p, r: r(p) })), backgroundColor: COLOR.incoming.fill, borderColor: COLOR.incoming.solid },
+        { label: 'Outgoing', data: buckets.outgoing.map(p => ({ ...p, r: r(p) })), backgroundColor: COLOR.outgoing.fill, borderColor: COLOR.outgoing.solid },
+        { label: 'Contract', data: buckets.contract.map(p => ({ ...p, r: 5 })), backgroundColor: COLOR.contract.fill, borderColor: COLOR.contract.solid },
+        { label: 'Failed',   data: buckets.failed.map(p => ({ ...p, r: 5 })), backgroundColor: COLOR.failed.fill, borderColor: COLOR.failed.solid },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 10 }, boxWidth: 10 } },
+        tooltip: { callbacks: { label: tlTip } },
+      },
+      scales: {
+        x: { type: 'time', time: { tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { day: 'MMM d', hour: 'MMM d HH:mm' } }, title: { display: true, text: 'Date', font: { size: 10 } }, ticks: { font: { size: 9 } } },
+        y: {
+          title: { display: true, text: '↑ Incoming (USD)   ↓ Outgoing (USD)', font: { size: 10 } },
+          ticks: { callback: v => '$' + Math.abs(v).toLocaleString(), font: { size: 10 } },
+          grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(128,128,128,0.1)', lineWidth: ctx => ctx.tick.value === 0 ? 2 : 1 },
+        },
+      },
+    },
+  });
+}
+
+function _drawFlowColumns(svgId, addrLower, txNorm, ethPrice, fmt, ethBalance, usdBalance) {
+  const svg = document.getElementById(svgId);
+  if (!svg) return;
+
+  const senders   = {};
+  const receivers = {};
+  txNorm.forEach(tx => {
+    if (tx.is_error) return;
+    const usd = tx.value_eth * ethPrice;
+    if (tx.to_address === addrLower && tx.from_address !== addrLower) {
+      if (!senders[tx.from_address]) senders[tx.from_address] = { usd: 0, txCount: 0 };
+      senders[tx.from_address].usd += usd; senders[tx.from_address].txCount++;
+    }
+    if (tx.from_address === addrLower && tx.to_address && tx.to_address !== addrLower) {
+      if (!receivers[tx.to_address]) receivers[tx.to_address] = { usd: 0, txCount: 0 };
+      receivers[tx.to_address].usd += usd; receivers[tx.to_address].txCount++;
+    }
+  });
+
+  const senderList   = Object.entries(senders).sort((a, b) => b[1].usd - a[1].usd);
+  const receiverList = Object.entries(receivers).sort((a, b) => b[1].usd - a[1].usd);
+
+  const NODE_W = 240, NODE_H = 66, NODE_GAP = 16, COL_GAP = 210, PAD = 36;
+  const colH = n => PAD * 2 + n * (NODE_H + NODE_GAP) - NODE_GAP;
+  const svgH = Math.max(colH(Math.max(senderList.length, 1)), colH(Math.max(receiverList.length, 1)), NODE_H + PAD * 2);
+  const svgW = NODE_W * 3 + COL_GAP * 2 + PAD * 2;
+  const col  = { left: PAD, center: PAD + NODE_W + COL_GAP, right: PAD + NODE_W * 2 + COL_GAP * 2 };
+
+  function nodeY(idx, total) {
+    const blockH = total * (NODE_H + NODE_GAP) - NODE_GAP;
+    return (svgH - blockH) / 2 + idx * (NODE_H + NODE_GAP);
+  }
+
+  const NS = 'http://www.w3.org/2000/svg';
+  svg.setAttribute('width', svgW); svg.setAttribute('height', svgH); svg.setAttribute('style', 'display:block');
+
+  const tip = document.createElement('div');
+  Object.assign(tip.style, { position: 'fixed', background: 'rgba(0,0,0,0.82)', color: '#fff', padding: '6px 10px', borderRadius: '5px', fontSize: '12px', pointerEvents: 'none', display: 'none', lineHeight: '1.6', zIndex: '9999', maxWidth: '320px', wordBreak: 'break-all' });
+  document.body.appendChild(tip);
+  const withTip = (elem, html) => {
+    elem.style.cursor = 'default';
+    elem.addEventListener('mouseenter', () => { tip.innerHTML = html; tip.style.display = 'block'; });
+    elem.addEventListener('mousemove',  e => { tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px'; });
+    elem.addEventListener('mouseleave', () => tip.style.display = 'none');
+  };
+
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+
+  const drawNode = (x, y, addr, fill, textColor, usdLabel) => {
+    const g = el('g', {}, svg);
+    el('rect', { x, y, width: NODE_W, height: NODE_H, rx: 5, fill }, g);
+    const midY = y + NODE_H / 2;
+    // address split across two lines, shifted up when USD label is present
+    const addrTop = usdLabel ? midY - 16 : midY - 7;
+    el('text', { x: x + NODE_W / 2, y: addrTop,      'text-anchor': 'middle', 'font-size': '10', fill: textColor, 'font-family': 'monospace' }, g).textContent = addr.slice(0, 20);
+    el('text', { x: x + NODE_W / 2, y: addrTop + 13, 'text-anchor': 'middle', 'font-size': '10', fill: textColor, 'font-family': 'monospace' }, g).textContent = addr.slice(20);
+    if (usdLabel) {
+      el('text', { x: x + NODE_W / 2, y: midY + 17, 'text-anchor': 'middle', 'font-size': '11', 'font-weight': 'bold', fill: '#f6c90e' }, g).textContent = usdLabel;
+    }
+    withTip(g, `<strong>${addr}</strong>${usdLabel ? `<br><span style="color:#f6c90e">${usdLabel}</span>` : ''}`);
+  };
+
+  const allUsd = [...senderList, ...receiverList].map(([, v]) => v.usd);
+  const maxUsd = Math.max(...allUsd, 1);
+
+  const drawArrow = (x1, y1, x2, y2, usd, color, tipHtml) => {
+    const w = Math.max(1.5, Math.min(16, (usd / maxUsd) * 16));
+    const mx = (x1 + x2) / 2;
+    const path = el('path', { d: `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, fill: 'none', stroke: color, 'stroke-width': w.toFixed(1), 'stroke-opacity': '0.55' }, svg);
+    withTip(path, tipHtml);
+    el('circle', { cx: x2, cy: y2, r: Math.max(3, w / 2), fill: color, opacity: '0.8' }, svg);
+  };
+
+  const cy = (svgH - NODE_H) / 2;
+  const centerLabel = ethBalance != null ? `${ethBalance.toFixed(4)} ETH · ${usdBalance}` : null;
+  drawNode(col.center, cy, addrLower, '#2980b9', '#fff', centerLabel);
+  const cmY = cy + NODE_H / 2;
+
+  senderList.forEach(([addr, d], i) => {
+    const y = nodeY(i, senderList.length), mid = y + NODE_H / 2;
+    drawNode(col.left, y, addr, 'rgba(39,174,96,0.15)', '#1a5c38', fmt(d.usd));
+    drawArrow(col.left + NODE_W, mid, col.center, cmY, d.usd, 'rgba(39,174,96,1)', `<strong>${addr}</strong><br>Sent: ${fmt(d.usd)}<br>${d.txCount} tx`);
+  });
+  if (!senderList.length) el('text', { x: col.left + NODE_W / 2, y: svgH / 2, 'text-anchor': 'middle', 'font-size': '13', fill: '#aaa' }, svg).textContent = 'No incoming';
+
+  receiverList.forEach(([addr, d], i) => {
+    const y = nodeY(i, receiverList.length), mid = y + NODE_H / 2;
+    drawNode(col.right, y, addr, 'rgba(230,126,34,0.15)', '#7d4a00', fmt(d.usd));
+    drawArrow(col.center + NODE_W, cmY, col.right, mid, d.usd, 'rgba(230,126,34,1)', `<strong>${addr}</strong><br>Received: ${fmt(d.usd)}<br>${d.txCount} tx`);
+  });
+  if (!receiverList.length) el('text', { x: col.right + NODE_W / 2, y: svgH / 2, 'text-anchor': 'middle', 'font-size': '13', fill: '#aaa' }, svg).textContent = 'No outgoing';
+
+  [
+    [col.left   + NODE_W / 2, 'Senders',          '#27ae60'],
+    [col.center + NODE_W / 2, 'Searched Address',  '#2980b9'],
+    [col.right  + NODE_W / 2, 'Recipients',        '#e67e22'],
+  ].forEach(([x, label, color]) => el('text', { x, y: 20, 'text-anchor': 'middle', 'font-size': '13', 'font-weight': 'bold', fill: color }, svg).textContent = label);
+}
+
+function _drawTxTable(containerId, addrLower, txNorm, ethPrice, fmt, COLOR, sanctionHits = {}) {
+  const container = document.getElementById(containerId);
+  if (!container || !txNorm.length) return;
+
+  const isCC = tx => tx.value_eth === 0 && !tx.is_error && tx.from_address === addrLower;
+
+  const DATASET_LABELS = {
+    us_ofac_sdn: 'OFAC SDN', us_ofac_cons: 'OFAC Cons.', un_sc_sanctions: 'UN SC',
+    eu_sanctions_map: 'EU', gb_hmt_sanctions: 'UK HMT', gb_fcdo_sanctions: 'UK FCDO',
+    ch_seco_sanctions: 'SECO', us_fbi_lazarus_crypto: 'FBI Lazarus', il_mod_crypto: 'IL MoD',
+    ransomwhere: 'Ransomwhere', ua_nsdc_sanctions: 'UA NSDC', ca_dfatd_sema_sanctions: 'CA SEMA',
+  };
+
+  const sanctionBadge = addr => {
+    const hit = sanctionHits[addr];
+    if (!hit) return '';
+    const labels = hit.datasets.map(d => DATASET_LABELS[d] || d).join(', ');
+    return ` <span title="Sanctioned: ${labels}${hit.holder ? ' · ' + hit.holder : ''}"
+      style="display:inline-block;background:#c0392b;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px;white-space:nowrap">
+      ⚠ ${labels}
+    </span>`;
+  };
+
+  const typeLabel = tx => {
+    if (tx.is_error)                   return `<span style="color:${COLOR.failed.solid};font-weight:600">Failed</span>`;
+    if (isCC(tx))                      return `<span style="color:${COLOR.contract.solid};font-weight:600">Contract Call</span>`;
+    if (tx.from_address === addrLower) return `<span style="color:${COLOR.outgoing.solid};font-weight:600">Outgoing</span>`;
+    return `<span style="color:${COLOR.incoming.solid};font-weight:600">Incoming</span>`;
+  };
+
+  const sanctionedCount = txNorm.filter(tx =>
+    sanctionHits[tx.from_address] || sanctionHits[tx.to_address]
+  ).length;
+
+  const rows = txNorm.map((tx, i) => {
+    const fromHit    = !!sanctionHits[tx.from_address];
+    const toHit      = !!sanctionHits[tx.to_address];
+    const rowFlagged = fromHit || toHit;
+    const bg = rowFlagged
+      ? 'rgba(192,57,43,0.13)'
+      : (i % 2 === 0 ? 'var(--bg)' : 'var(--surface)');
+    const border = rowFlagged ? '1px solid rgba(192,57,43,0.35)' : '1px solid var(--border)';
+    const date   = new Date(tx.timestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    const usdVal = ethPrice ? fmt(tx.value_eth * ethPrice) : `${tx.value_eth.toFixed(6)} ETH`;
+    const valColor = tx.from_address === addrLower && tx.value_eth > 0 ? COLOR.outgoing.solid : COLOR.incoming.solid;
+    const gasFeeStr = tx.gas_fee_eth > 0
+      ? (ethPrice ? fmt(tx.gas_fee_eth * ethPrice) : `${tx.gas_fee_eth.toFixed(6)} ETH`)
+      : '<span style="color:var(--muted)">—</span>';
+    const td = `padding:6px 10px;border-bottom:${border};font-size:11px`;
+    return `<tr style="background:${bg}${rowFlagged ? ';outline:1px solid rgba(192,57,43,0.25)' : ''}">
+      <td style="${td}">${typeLabel(tx)}${rowFlagged ? ' <span style="color:#e74c3c;font-size:10px">⚠</span>' : ''}</td>
+      <td style="${td};font-family:monospace">
+        <a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--accent)">${tx.hash.slice(0,14)}…</a>
+      </td>
+      <td style="${td};font-size:10px;font-family:monospace;word-break:break-all;max-width:150px">
+        ${tx.from_address}${sanctionBadge(tx.from_address)}
+      </td>
+      <td style="${td};font-size:10px;font-family:monospace;word-break:break-all;max-width:150px">
+        ${tx.to_address || '—'}${tx.to_address ? sanctionBadge(tx.to_address) : ''}
+      </td>
+      <td style="${td};color:${valColor}">${usdVal}</td>
+      <td style="${td};color:var(--muted)">${gasFeeStr}</td>
+      <td style="${td};white-space:nowrap">${date}</td>
+      <td style="${td}">${tx.is_error ? `<span style="color:${COLOR.failed.solid}">Failed</span>` : '<span style="color:var(--green)">OK</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const sanctionNote = sanctionedCount
+    ? `<div style="font-size:11px;color:#e74c3c;margin-bottom:8px">
+        ⚠ <strong>${sanctionedCount}</strong> transaction${sanctionedCount !== 1 ? 's' : ''} involve a sanctioned address
+       </div>`
+    : '';
+
+  const thead = `<thead><tr>${['Type','Tx Hash','From','To','Value','Gas Fee','Date','Status'].map(h =>
+    `<th style="padding:8px 10px;text-align:left;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border)">${h}</th>`
+  ).join('')}</tr></thead>`;
+
+  container.innerHTML = sanctionNote + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}<tbody>${rows}</tbody></table></div>`;
 }
 
 function _loadVisNetwork(cb) {
@@ -450,6 +933,7 @@ function _drawEthNetworkGraph(containerId, address, txs) {
     edges: { arrows: { to: { scaleFactor: 0.6 } } },
   });
 }
+
 
 function cyberFilter(cat) {
   document.querySelectorAll('.cyber-filter').forEach(btn => {

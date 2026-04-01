@@ -5,8 +5,12 @@ Helpers: is_cyber_dataset, cyber_category
 Constants: CYBER_TITLE_KEYWORDS, CYBER_DESC_KEYWORDS, CYBER_TAGS, CYBER_NAME_ALLOWLIST
 """
 
+import json
+import os
 from flask import Blueprint, jsonify, request
 from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch
+
+_NOTES_PATH = os.path.join(os.path.dirname(__file__), '..', 'cyber_notes.json')
 
 cyber_bp = Blueprint("cyber_bp", __name__)
 
@@ -291,6 +295,125 @@ def api_cyber_records():
             results.append(dict(row, _dataset=name))
 
     return jsonify({"results": results, "searched": searched, "total": len(results)})
+
+
+@cyber_bp.route("/api/sanctions-check")
+def api_sanctions_check():
+    """
+    Check whether a crypto address appears on any sanctions list.
+    Query param: address (case-insensitive).
+    Returns all matching records with dataset, holder, and program info.
+    """
+    address = (request.args.get("address") or "").strip().lower()
+    if not address:
+        return jsonify({"matches": [], "sanctioned": False})
+
+    matches = []
+    for ds_name in CRYPTO_SCAN_DATASETS:
+        rows = _get_entities(ds_name)
+        for row in rows:
+            pub = (row.get("publicKey") or "").strip().lower()
+            cap = (row.get("caption")   or "").strip().lower()
+            if address in (pub, cap):
+                matches.append({
+                    "dataset":          ds_name,
+                    "caption":          row.get("caption", ""),
+                    "holder":           row.get("holder", ""),
+                    "currency":         row.get("currency", ""),
+                    "schema":           row.get("schema", ""),
+                    "sanction_program": row.get("sanction_program", ""),
+                    "sanction_authority": row.get("sanction_authority", ""),
+                    "sanction_reason":  row.get("sanction_reason", ""),
+                    "first_seen":       row.get("first_seen", ""),
+                })
+
+    return jsonify({"matches": matches, "sanctioned": len(matches) > 0})
+
+
+@cyber_bp.route("/api/sanctions-check-batch", methods=["POST"])
+def api_sanctions_check_batch():
+    """
+    Check a list of crypto addresses against all sanctions lists in one pass.
+    Body: {"addresses": ["0x...", ...]}
+    Returns: {"hits": {"0x...": {"datasets": [...], "holder": "..."}}}
+    """
+    body      = request.get_json(force=True) or {}
+    addresses = {a.strip().lower() for a in (body.get("addresses") or []) if a}
+    if not addresses:
+        return jsonify({"hits": {}})
+
+    # Build a lookup: address -> hit info in a single scan per dataset
+    hits = {}
+    for ds_name in CRYPTO_SCAN_DATASETS:
+        rows = _get_entities(ds_name)
+        for row in rows:
+            pub = (row.get("publicKey") or "").strip().lower()
+            cap = (row.get("caption")   or "").strip().lower()
+            matched = addresses.intersection({pub, cap} - {""})
+            for addr in matched:
+                if addr not in hits:
+                    hits[addr] = {"datasets": [], "holder": row.get("holder", ""), "currency": row.get("currency", "")}
+                if ds_name not in hits[addr]["datasets"]:
+                    hits[addr]["datasets"].append(ds_name)
+
+    return jsonify({"hits": hits})
+
+
+def _load_notes():
+    try:
+        with open(_NOTES_PATH, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_notes(notes):
+    with open(_NOTES_PATH, 'w') as f:
+        json.dump(notes, f, indent=2)
+
+
+@cyber_bp.route("/api/notes", methods=["GET"])
+def api_notes_get():
+    return jsonify(_load_notes())
+
+
+@cyber_bp.route("/api/notes", methods=["POST"])
+def api_notes_post():
+    body = request.get_json(force=True) or {}
+    notes = _load_notes()
+    note = {
+        "id":        int(__import__('time').time() * 1000),
+        "title":     (body.get("title") or "").strip(),
+        "body":      (body.get("body")  or "").strip(),
+        "tags":      [t.strip() for t in (body.get("tags") or []) if t.strip()],
+        "created_at": __import__('datetime').datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    notes.insert(0, note)
+    _save_notes(notes)
+    return jsonify(note), 201
+
+
+@cyber_bp.route("/api/notes/<int:note_id>", methods=["DELETE"])
+def api_notes_delete(note_id):
+    notes = _load_notes()
+    notes = [n for n in notes if n.get("id") != note_id]
+    _save_notes(notes)
+    return jsonify({"ok": True})
+
+
+@cyber_bp.route("/api/notes/<int:note_id>", methods=["PUT"])
+def api_notes_put(note_id):
+    body = request.get_json(force=True) or {}
+    notes = _load_notes()
+    for n in notes:
+        if n.get("id") == note_id:
+            if "title" in body: n["title"] = (body["title"] or "").strip()
+            if "body"  in body: n["body"]  = (body["body"]  or "").strip()
+            if "tags"  in body: n["tags"]  = [t.strip() for t in (body["tags"] or []) if t.strip()]
+            n["updated_at"] = __import__('datetime').datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+            break
+    _save_notes(notes)
+    return jsonify({"ok": True})
 
 
 @cyber_bp.route("/api/etherscan-key")
