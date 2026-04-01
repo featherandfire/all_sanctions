@@ -293,14 +293,12 @@ async function etherscanLookup() {
     const eth = parseFloat(data.result) / 1e18;
     const addrLower = address.toLowerCase();
     const apiBase = `https://api.etherscan.io/v2/api?${new URLSearchParams({chainid:'1', apikey:_etherscanKey})}`;
-    const [priceRes, txRes, sanctionsRes] = await Promise.all([
+    const [priceRes, txRes] = await Promise.all([
       fetch(`${apiBase}&module=stats&action=ethprice`),
       fetch(`${apiBase}&module=account&action=txlist&address=${encodeURIComponent(address)}&sort=desc&offset=100`),
-      fetch(`/api/sanctions-check?address=${encodeURIComponent(address.toLowerCase())}`)
     ]);
-    const priceData    = await priceRes.json();
-    const txDataRaw    = await txRes.json();
-    const sanctionsData = await sanctionsRes.json();
+    const priceData = await priceRes.json();
+    const txDataRaw = await txRes.json();
     const ethPrice = parseFloat(priceData.result?.ethusd || 0);
     const usd = ethPrice ? (eth * ethPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : '—';
     const rawTxs = Array.isArray(txDataRaw.result) ? txDataRaw.result : [];
@@ -379,67 +377,11 @@ async function etherscanLookup() {
         </table>
       </div>`;
 
-    const sanctioned = sanctionsData.sanctioned;
-    const sMatches   = sanctionsData.matches || [];
-    const DATASET_LABELS = {
-      us_ofac_sdn:            'OFAC SDN',
-      us_ofac_cons:           'OFAC Consolidated',
-      un_sc_sanctions:        'UN Security Council',
-      eu_sanctions_map:       'EU Sanctions Map',
-      gb_hmt_sanctions:       'UK HMT',
-      gb_fcdo_sanctions:      'UK FCDO',
-      ch_seco_sanctions:      'Switzerland SECO',
-      us_fbi_lazarus_crypto:  'FBI Lazarus Group',
-      il_mod_crypto:          'Israel MoD',
-      ransomwhere:            'Ransomwhere',
-      ua_nsdc_sanctions:      'Ukraine NSDC',
-      ca_dfatd_sema_sanctions:'Canada SEMA',
-    };
-    const sanctionsTile = sanctioned ? `
-      <div style="background:#1a0a0a;border:2px solid #c0392b;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <span style="font-size:20px">⚠️</span>
-          <div>
-            <div style="font-size:15px;font-weight:700;color:#e74c3c">SANCTIONED ADDRESS</div>
-            <div style="font-size:11px;color:#c0392b;margin-top:1px">This address appears on ${sMatches.length} sanctions list${sMatches.length !== 1 ? 's' : ''}</div>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${sMatches.map(m => `
-            <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.3);border-radius:6px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
-              <div style="min-width:140px">
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">List</div>
-                <div style="font-size:13px;font-weight:600;color:#e74c3c">${esc(DATASET_LABELS[m.dataset] || m.dataset)}</div>
-              </div>
-              ${m.holder ? `<div style="min-width:160px">
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Holder</div>
-                <div style="font-size:12px;color:#e2e8f0">${esc(m.holder)}</div>
-              </div>` : ''}
-              ${m.currency ? `<div>
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Currency</div>
-                <div style="font-size:12px;color:#e2e8f0">${esc(m.currency)}</div>
-              </div>` : ''}
-              ${m.sanction_program ? `<div style="min-width:160px">
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Program</div>
-                <div style="font-size:12px;color:#e2e8f0">${esc(m.sanction_program)}</div>
-              </div>` : ''}
-              ${m.sanction_reason ? `<div style="flex:1;min-width:200px">
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Reason</div>
-                <div style="font-size:11px;color:#e2e8f0">${esc(m.sanction_reason)}</div>
-              </div>` : ''}
-              ${m.first_seen ? `<div>
-                <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">First Seen</div>
-                <div style="font-size:12px;color:#e2e8f0">${esc(m.first_seen)}</div>
-              </div>` : ''}
-            </div>`).join('')}
-        </div>
-      </div>` : `
-      <div style="background:#0a1a0f;border:1px solid #27ae60;border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:18px">✅</span>
-        <div>
-          <div style="font-size:13px;font-weight:600;color:#2ecc71">Not found on sanctions lists</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:1px">Checked against 12 lists including OFAC SDN, UN, EU, UK, and more</div>
-        </div>
+    // Sanctions tile — placeholder rendered immediately, filled async after page loads
+    const sanctionsTile = `
+      <div id="sanctions-tile" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
+        <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
+        <div style="font-size:12px;color:var(--muted)">Checking sanctions lists…</div>
       </div>`;
 
     resultsEl.innerHTML = `
@@ -523,6 +465,75 @@ async function etherscanLookup() {
         .catch(() =>         _drawTxTable('eth-tx-table', addrLower, txNorm, ethPrice, fmt, COLOR, {}));
     }
     _loadVisNetwork(() => _drawEthNetworkGraph('eth-flow-chart', address, rawTxs));
+
+    // Sanctions checks run async — don't block page render
+    const DATASET_LABELS = {
+      us_ofac_sdn:'OFAC SDN', us_ofac_cons:'OFAC Consolidated', un_sc_sanctions:'UN Security Council',
+      eu_sanctions_map:'EU Sanctions Map', gb_hmt_sanctions:'UK HMT', gb_fcdo_sanctions:'UK FCDO',
+      ch_seco_sanctions:'Switzerland SECO', us_fbi_lazarus_crypto:'FBI Lazarus Group',
+      il_mod_crypto:'Israel MoD', ransomwhere:'Ransomwhere',
+      ua_nsdc_sanctions:'Ukraine NSDC', ca_dfatd_sema_sanctions:'Canada SEMA',
+    };
+
+    // Address sanctions check + batch counterparty check run in parallel
+    const counterparties = rawTxs.length
+      ? [...new Set(rawTxs.flatMap(tx => [tx.from?.toLowerCase(), tx.to?.toLowerCase()]).filter(Boolean))]
+      : [];
+
+    Promise.all([
+      fetch(`/api/sanctions-check?address=${encodeURIComponent(addrLower)}`).then(r => r.json()),
+      counterparties.length
+        ? fetch('/api/sanctions-check-batch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({addresses: counterparties}) }).then(r => r.json())
+        : Promise.resolve({hits:{}}),
+    ]).then(([sanctionsData, batchData]) => {
+      // Update sanctions tile
+      const tile = document.getElementById('sanctions-tile');
+      if (tile) {
+        const sanctioned = sanctionsData.sanctioned;
+        const sMatches   = sanctionsData.matches || [];
+        if (sanctioned) {
+          tile.style.cssText = 'background:#1a0a0a;border:2px solid #c0392b;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px';
+          tile.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <span style="font-size:20px">⚠️</span>
+              <div>
+                <div style="font-size:15px;font-weight:700;color:#e74c3c">SANCTIONED ADDRESS</div>
+                <div style="font-size:11px;color:#c0392b;margin-top:1px">This address appears on ${sMatches.length} sanctions list${sMatches.length !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              ${sMatches.map(m => `
+                <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.3);border-radius:6px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
+                  <div style="min-width:140px">
+                    <div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">List</div>
+                    <div style="font-size:13px;font-weight:600;color:#e74c3c">${esc(DATASET_LABELS[m.dataset] || m.dataset)}</div>
+                  </div>
+                  ${m.holder ? `<div style="min-width:160px"><div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Holder</div><div style="font-size:12px;color:#e2e8f0">${esc(m.holder)}</div></div>` : ''}
+                  ${m.currency ? `<div><div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Currency</div><div style="font-size:12px;color:#e2e8f0">${esc(m.currency)}</div></div>` : ''}
+                  ${m.sanction_program ? `<div style="min-width:160px"><div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Program</div><div style="font-size:12px;color:#e2e8f0">${esc(m.sanction_program)}</div></div>` : ''}
+                  ${m.sanction_reason ? `<div style="flex:1;min-width:200px"><div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Reason</div><div style="font-size:11px;color:#e2e8f0">${esc(m.sanction_reason)}</div></div>` : ''}
+                  ${m.first_seen ? `<div><div style="font-size:10px;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">First Seen</div><div style="font-size:12px;color:#e2e8f0">${esc(m.first_seen)}</div></div>` : ''}
+                </div>`).join('')}
+            </div>`;
+        } else {
+          tile.style.cssText = 'background:#0a1a0f;border:1px solid #27ae60;border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px';
+          tile.innerHTML = `<span style="font-size:18px">✅</span><div><div style="font-size:13px;font-weight:600;color:#2ecc71">Not found on sanctions lists</div><div style="font-size:11px;color:var(--muted);margin-top:1px">Checked against 12 lists including OFAC SDN, UN, EU, UK, and more</div></div>`;
+        }
+      }
+
+      // Update transaction table with sanctions highlights
+      const hits = batchData.hits || {};
+      if (rawTxs.length && Object.keys(hits).length) {
+        _drawTxTable('eth-tx-table', addrLower, txNorm, ethPrice, fmt, COLOR, hits);
+      }
+    }).catch(() => {
+      const tile = document.getElementById('sanctions-tile');
+      if (tile) {
+        tile.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px';
+        tile.innerHTML = `<span style="font-size:16px">⚠</span><div style="font-size:12px;color:var(--muted)">Sanctions check unavailable</div>`;
+      }
+    });
+
     return;
   }
 
