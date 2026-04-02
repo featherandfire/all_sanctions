@@ -53,10 +53,12 @@ _DEFAULT_TTL = 3_600
 def _conn() -> sqlite3.Connection:
     """Return a per-thread connection; create it lazily."""
     if not getattr(_local, "conn", None):
-        conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")   # allow concurrent readers
-        conn.execute("PRAGMA synchronous=NORMAL") # fsync on checkpoint only
-        conn.execute("PRAGMA cache_size=-32768")  # 32 MB page cache
+        # timeout=30: wait up to 30s for a write lock before raising
+        conn = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")    # concurrent readers
+        conn.execute("PRAGMA synchronous=NORMAL")  # fsync on checkpoint only
+        conn.execute("PRAGMA cache_size=-32768")   # 32 MB page cache
+        conn.execute("PRAGMA busy_timeout=30000")  # redundant but explicit (ms)
         conn.row_factory = sqlite3.Row
         _local.conn = conn
     return _local.conn
@@ -121,51 +123,62 @@ def get(source: str, identifier: str, params: dict = None):
     ).fetchone()
 
     if row is None:
-        _log(conn, source, "miss")
-        conn.commit()
+        try:
+            _log(conn, source, "miss")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
         return None
 
     age = now - row["created_at"]
     if age >= row["ttl"]:
-        # Entry exists but is stale — delete it so next caller re-fetches
-        conn.execute("DELETE FROM cache WHERE key = ?", (key,))
-        _log(conn, source, "expired")
-        conn.commit()
+        try:
+            conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+            _log(conn, source, "expired")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
         return None
 
     # Fresh hit
-    conn.execute(
-        "UPDATE cache SET hit_count = hit_count + 1, last_hit = ? WHERE key = ?",
-        (now, key),
-    )
-    _log(conn, source, "hit")
-    conn.commit()
+    try:
+        conn.execute(
+            "UPDATE cache SET hit_count = hit_count + 1, last_hit = ? WHERE key = ?",
+            (now, key),
+        )
+        _log(conn, source, "hit")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     return json.loads(row["data"])
 
 
 def set(source: str, identifier: str, data, params: dict = None, ttl: int = None):
     """
     Store value in L2. Overwrites any existing entry for the same key.
+    Silently skips if the db is locked — L1 still has the data.
     """
-    key      = _make_key(source, identifier, params)
-    ttl      = ttl if ttl is not None else TTL.get(source, _DEFAULT_TTL)
-    conn     = _conn()
-
-    conn.execute(
-        """
-        INSERT INTO cache(key, source, data, created_at, ttl)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE
-            SET data       = excluded.data,
-                created_at = excluded.created_at,
-                ttl        = excluded.ttl,
-                hit_count  = 0,
-                last_hit   = NULL
-        """,
-        (key, source, json.dumps(data, default=str), time.time(), ttl),
-    )
-    _log(conn, source, "set")
-    conn.commit()
+    key  = _make_key(source, identifier, params)
+    ttl  = ttl if ttl is not None else TTL.get(source, _DEFAULT_TTL)
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO cache(key, source, data, created_at, ttl)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE
+                SET data       = excluded.data,
+                    created_at = excluded.created_at,
+                    ttl        = excluded.ttl,
+                    hit_count  = 0,
+                    last_hit   = NULL
+            """,
+            (key, source, json.dumps(data, default=str), time.time(), ttl),
+        )
+        _log(conn, source, "set")
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.warning("L2 set skipped (db locked): %s/%s — %s", source, identifier, e)
 
 
 def invalidate(source: str = None, identifier: str = None):
