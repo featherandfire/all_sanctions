@@ -5,17 +5,22 @@ Data layer: index fetching, entity loading, helpers.
 import csv
 import io
 import json
+import logging
 import ssl
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+import cache as l2
+
+logger = logging.getLogger(__name__)
+
 INDEX_URL = "https://data.opensanctions.org/datasets/latest/index.json"
 _INDEX_TTL = 3600  # seconds before re-fetching the index
 
 _cache = {}        # {"index": data, "index_ts": float}
-_entity_cache = {} # dataset_name -> list of flat dicts
+_entity_cache = {} # dataset_name -> list of flat dicts  (L1)
 
 DEFAULT_SEARCH_DATASETS = [
     "us_ofac_sdn", "us_ofac_cons", "un_sc_sanctions", "eu_sanctions_map",
@@ -220,9 +225,19 @@ def _stream_ndjson(url, timeout=120):
 
 
 def _get_entities(ds_name):
+    # L1 hit
     if ds_name in _entity_cache:
         return _entity_cache[ds_name]
 
+    # L2 hit — warm L1 from disk, skip network fetch
+    cached = l2.get("entity", ds_name)
+    if cached is not None:
+        logger.debug("L2 hit: entity/%s (%d records)", ds_name, len(cached))
+        _entity_cache[ds_name] = cached
+        return cached
+
+    # L3 — fetch from origin
+    logger.info("L2 miss: fetching entity/%s from origin", ds_name)
     index = fetch_index()
     ds = next((d for d in index["datasets"] if d["name"] == ds_name), None)
     if not ds:
@@ -233,16 +248,17 @@ def _get_entities(ds_name):
 
     if nested:
         records = _stream_ndjson(nested["url"])
-        _entity_cache[ds_name] = records
-        return records
-
-    if csv_r:
+    elif csv_r:
         raw = _http_get(csv_r["url"])
-        rows = list(csv.DictReader(io.StringIO(raw)))
-        _entity_cache[ds_name] = rows
-        return rows
+        records = list(csv.DictReader(io.StringIO(raw)))
+    else:
+        return []
 
-    return []
+    # Populate both cache layers
+    l2.set("entity", ds_name, records)
+    _entity_cache[ds_name] = records
+    logger.info("L2 set: entity/%s (%d records)", ds_name, len(records))
+    return records
 
 
 def _get_entities_batch(ds_names, max_workers=8):

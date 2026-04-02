@@ -10,6 +10,7 @@ import os
 import sys
 from flask import Blueprint, jsonify, request
 from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch
+import cache as l2
 
 # Ensure the project root is on the path so config.py is always importable
 # regardless of gunicorn's working directory
@@ -311,11 +312,15 @@ def api_sanctions_check():
     """
     Check whether a crypto address appears on any sanctions list.
     Query param: address (case-insensitive).
-    Returns all matching records with dataset, holder, and program info.
+    Result is cached in L2 for 1 hour.
     """
     address = (request.args.get("address") or "").strip().lower()
     if not address:
         return jsonify({"matches": [], "sanctioned": False})
+
+    cached = l2.get("sanctions_check", address)
+    if cached is not None:
+        return jsonify(cached)
 
     matches = []
     for ds_name in CRYPTO_SCAN_DATASETS:
@@ -325,18 +330,20 @@ def api_sanctions_check():
             cap = (row.get("caption")   or "").strip().lower()
             if address in (pub, cap):
                 matches.append({
-                    "dataset":          ds_name,
-                    "caption":          row.get("caption", ""),
-                    "holder":           row.get("holder", ""),
-                    "currency":         row.get("currency", ""),
-                    "schema":           row.get("schema", ""),
-                    "sanction_program": row.get("sanction_program", ""),
+                    "dataset":            ds_name,
+                    "caption":            row.get("caption", ""),
+                    "holder":             row.get("holder", ""),
+                    "currency":           row.get("currency", ""),
+                    "schema":             row.get("schema", ""),
+                    "sanction_program":   row.get("sanction_program", ""),
                     "sanction_authority": row.get("sanction_authority", ""),
-                    "sanction_reason":  row.get("sanction_reason", ""),
-                    "first_seen":       row.get("first_seen", ""),
+                    "sanction_reason":    row.get("sanction_reason", ""),
+                    "first_seen":         row.get("first_seen", ""),
                 })
 
-    return jsonify({"matches": matches, "sanctioned": len(matches) > 0})
+    result = {"matches": matches, "sanctioned": len(matches) > 0}
+    l2.set("sanctions_check", address, result)
+    return jsonify(result)
 
 
 @cyber_bp.route("/api/sanctions-check-batch", methods=["POST"])
