@@ -20,7 +20,8 @@ try:
 except ImportError:
     ETHERSCAN_API_KEY = ""
 
-_NOTES_PATH = os.path.join(os.path.dirname(__file__), '..', 'cyber_notes.json')
+_NOTES_PATH   = os.path.join(os.path.dirname(__file__), '..', 'cyber_notes.json')
+_HISTORY_PATH = os.path.join(os.path.dirname(__file__), '..', 'address_history.json')
 
 cyber_bp = Blueprint("cyber_bp", __name__)
 
@@ -458,6 +459,76 @@ def api_notes_put(note_id):
             n["updated_at"] = __import__('datetime').datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
             break
     _save_notes(notes)
+    return jsonify({"ok": True})
+
+
+def _load_history():
+    try:
+        with open(_HISTORY_PATH, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def _save_history(history):
+    with open(_HISTORY_PATH, 'w') as f:
+        json.dump(history, f, indent=2)
+
+
+@cyber_bp.route("/api/address-history", methods=["GET"])
+def api_address_history_get():
+    return jsonify(_load_history())
+
+
+@cyber_bp.route("/api/address-history", methods=["POST"])
+def api_address_history_post():
+    """
+    Log a searched address. Deduplicates by address — moves to top if
+    already exists and updates sanctions/label fields.
+    Body: {
+      "address": "0x...",
+      "sanctioned": bool,
+      "sanction_lists": ["OFAC SDN", ...],
+      "label": "optional display name",
+      "referred_from": "0x... (optional parent address)",
+      "mode": "balance|txlist|tokentx"
+    }
+    """
+    import datetime as dt
+    body    = request.get_json(force=True) or {}
+    address = (body.get("address") or "").strip().lower()
+    if not address:
+        return jsonify({"ok": False, "error": "address required"}), 400
+
+    history = _load_history()
+    # Remove existing entry for this address so we can re-insert at top
+    history = [h for h in history if h.get("address") != address]
+
+    entry = {
+        "address":       address,
+        "sanctioned":    bool(body.get("sanctioned", False)),
+        "sanction_lists": body.get("sanction_lists", []),
+        "label":         (body.get("label") or "").strip(),
+        "referred_from": (body.get("referred_from") or "").strip().lower(),
+        "mode":          body.get("mode", "balance"),
+        "searched_at":   dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    history.insert(0, entry)
+    _save_history(history)
+    return jsonify(entry), 201
+
+
+@cyber_bp.route("/api/address-history/<path:address>", methods=["DELETE"])
+def api_address_history_delete(address):
+    address = address.strip().lower()
+    history = _load_history()
+    history = [h for h in history if h.get("address") != address]
+    _save_history(history)
+    return jsonify({"ok": True})
+
+
+@cyber_bp.route("/api/address-history", methods=["DELETE"])
+def api_address_history_clear():
+    _save_history([])
     return jsonify({"ok": True})
 
 

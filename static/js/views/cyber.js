@@ -82,7 +82,7 @@ async function renderCyberView(tab) {
       <div id="crypto-wallets-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading crypto address records…</div></div></div>`;
     loadCryptoWallets();
   } else if (_cyberTab === 'etherscan') {
-    content.innerHTML = tabBar + renderEtherscanView();
+    content.innerHTML = tabBar + await renderEtherscanView();
   } else {
     // Records tab — full entity table from all cyber datasets
     content.innerHTML = tabBar + statStrip + `<div id="cyber-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading all records from cyber datasets… this may take a moment</div></div></div>`;
@@ -222,44 +222,65 @@ function renderCyberCard(ds) {
   </div>`;
 }
 
-function renderEtherscanView() {
+async function renderEtherscanView() {
+  const res     = await fetch('/api/address-history');
+  const history = await res.json();
+  _addrHistory  = history;
+
   return `
-    <div style="max-width:700px">
-      <div style="margin-bottom:20px">
-        <div style="font-size:15px;font-weight:700;color:var(--yellow);margin-bottom:4px">₿ Etherscan Lookup</div>
-        <div style="font-size:12px;color:var(--muted)">Look up Ethereum addresses, transactions, and token transfers via the Etherscan API.</div>
-      </div>
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start">
 
-      <div style="display:flex;gap:8px;margin-bottom:24px">
-        <div style="position:relative;flex:1">
-          <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="etherscan-input" type="text" placeholder="Enter Ethereum address (0x…) or tx hash…"
-            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px 10px 34px;font-size:13px;color:var(--text);outline:none;font-family:monospace"
-            onkeydown="if(event.key==='Enter') etherscanLookup()">
+      <!-- Left: lookup panel -->
+      <div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:15px;font-weight:700;color:var(--yellow);margin-bottom:4px">₿ Etherscan Lookup</div>
+          <div style="font-size:12px;color:var(--muted)">Look up Ethereum addresses, transactions, and token transfers via the Etherscan API.</div>
         </div>
-        <button onclick="etherscanLookup()"
-          style="padding:10px 20px;background:var(--yellow);color:#000;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0">
-          Look Up
-        </button>
+
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+          <div style="position:relative;flex:1">
+            <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="etherscan-input" type="text" placeholder="Enter Ethereum address (0x…) or tx hash…"
+              style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px 10px 34px;font-size:13px;color:var(--text);outline:none;font-family:monospace"
+              onkeydown="if(event.key==='Enter') etherscanLookup()">
+          </div>
+          <button onclick="etherscanLookup()"
+            style="padding:10px 20px;background:var(--yellow);color:#000;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0">
+            Look Up
+          </button>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" id="etherscan-type-btns">
+          ${['balance','txlist','tokentx'].map((m, i) => {
+            const labels = { balance: 'ETH Balance', txlist: 'Transactions', tokentx: 'Token Transfers' };
+            return `<button class="etherscan-type-btn" data-module="${m}"
+              onclick="etherscanSetType('${m}')"
+              style="padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:${i===0?'var(--yellow)':'none'};color:${i===0?'#000':'var(--muted)'};font-size:12px;cursor:pointer">
+              ${labels[m]}
+            </button>`;
+          }).join('')}
+        </div>
+
+        <div id="etherscan-results"></div>
       </div>
 
-      <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" id="etherscan-type-btns">
-        ${['balance','txlist','tokentx'].map((m, i) => {
-          const labels = { balance: 'ETH Balance', txlist: 'Transactions', tokentx: 'Token Transfers' };
-          return `<button class="etherscan-type-btn" data-module="${m}"
-            onclick="etherscanSetType('${m}')"
-            style="padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:${i===0?'var(--yellow)':'none'};color:${i===0?'#000':'var(--muted)'};font-size:12px;cursor:pointer">
-            ${labels[m]}
-          </button>`;
-        }).join('')}
+      <!-- Right: address history sidebar -->
+      <div style="position:sticky;top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Address Trail</div>
+          ${history.length ? `<button onclick="addrHistoryClear()" style="font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border)">Clear all</button>` : ''}
+        </div>
+        <div id="addr-history-list" style="display:flex;flex-direction:column;gap:6px;max-height:80vh;overflow-y:auto">
+          ${history.length ? history.map(h => _addrHistoryCardHTML(h)).join('') : `<div style="font-size:12px;color:var(--muted);padding:12px 0">No addresses searched yet.</div>`}
+        </div>
       </div>
 
-      <div id="etherscan-results"></div>
     </div>`;
 }
 
 let _etherscanType = 'balance';
-let _etherscanKey = null;
+let _etherscanKey  = null;
+let _addrHistory   = [];   // in-memory mirror of server-side address history
 
 function etherscanSetType(type) {
   _etherscanType = type;
@@ -491,6 +512,9 @@ async function etherscanLookup() {
         ? fetch('/api/sanctions-check-batch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({addresses: counterparties}) }).then(r => r.json())
         : Promise.resolve({hits:{}}),
     ]).then(([sanctionsData, batchData]) => {
+      // Log this address to persistent history
+      _addrHistoryLog(addrLower, sanctionsData, _etherscanType);
+
       // Update sanctions tile
       const tile = document.getElementById('sanctions-tile');
       if (tile) {
@@ -545,6 +569,9 @@ async function etherscanLookup() {
     return;
   }
 
+  // Log txlist / tokentx lookups (balance mode is logged inside the sanctions callback)
+  _addrHistoryLog(address.toLowerCase(), null, _etherscanType);
+
   const rows = Array.isArray(data.result) ? data.result : [];
   if (!rows.length) {
     resultsEl.innerHTML = `<div class="empty"><div class="empty-icon">₿</div><div>No records found</div></div>`;
@@ -573,6 +600,104 @@ async function etherscanLookup() {
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${rows.length.toLocaleString()} records (showing first 100)</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div>`;
 }
+
+// ── Address History ───────────────────────────────────────────────────────────
+
+function _addrHistoryCardHTML(h) {
+  const short    = h.address.slice(0, 8) + '…' + h.address.slice(-6);
+  const sanctBg  = h.sanctioned ? '#1a0a0a' : 'var(--surface)';
+  const sanctBdr = h.sanctioned ? '1px solid #c0392b88' : '1px solid var(--border)';
+  const badge    = h.sanctioned
+    ? `<span style="font-size:9px;background:#c0392b;color:#fff;border-radius:3px;padding:1px 5px;font-weight:700">⚠ SANCTIONED</span>`
+    : `<span style="font-size:9px;background:#1a4a2a;color:#2ecc71;border-radius:3px;padding:1px 5px">✓ CLEAN</span>`;
+  const lists = (h.sanction_lists || []).slice(0, 2).join(', ');
+  const from  = h.referred_from
+    ? `<div style="font-size:9px;color:var(--muted);margin-top:2px">← ${h.referred_from.slice(0,8)}…${h.referred_from.slice(-4)}</div>`
+    : '';
+  const label = h.label ? `<div style="font-size:10px;color:var(--accent);margin-top:1px">${esc(h.label)}</div>` : '';
+
+  return `<div style="background:${sanctBg};border:${sanctBdr};border-radius:6px;padding:9px 10px;cursor:pointer"
+    onclick="addrHistoryLoad('${h.address}')"
+    title="${h.address}">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px">
+      <div style="min-width:0">
+        <div style="font-size:11px;font-family:monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${short}</div>
+        ${label}
+        ${from}
+        <div style="font-size:9px;color:var(--muted);margin-top:3px">${h.searched_at || ''}</div>
+        ${lists ? `<div style="font-size:9px;color:#e74c3c;margin-top:1px">${esc(lists)}</div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+        ${badge}
+        <button onclick="event.stopPropagation();addrHistoryDelete('${h.address}')"
+          style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer;padding:0">✕</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _addrHistoryRefreshSidebar() {
+  const list = document.getElementById('addr-history-list');
+  if (!list) return;
+  list.innerHTML = _addrHistory.length
+    ? _addrHistory.map(h => _addrHistoryCardHTML(h)).join('')
+    : `<div style="font-size:12px;color:var(--muted);padding:12px 0">No addresses searched yet.</div>`;
+}
+
+async function _addrHistoryLog(address, sanctionsData, mode) {
+  const sanction_lists = (sanctionsData?.matches || [])
+    .map(m => ({
+      us_ofac_sdn:'OFAC SDN', us_ofac_cons:'OFAC Cons.', un_sc_sanctions:'UN SC',
+      eu_sanctions_map:'EU', gb_hmt_sanctions:'UK HMT', gb_fcdo_sanctions:'UK FCDO',
+      ch_seco_sanctions:'SECO', us_fbi_lazarus_crypto:'FBI Lazarus',
+      il_mod_crypto:'IL MoD', ransomwhere:'Ransomwhere',
+      ua_nsdc_sanctions:'UA NSDC', ca_dfatd_sema_sanctions:'CA SEMA',
+    })[m.dataset] || m.dataset)
+    .filter((v, i, a) => a.indexOf(v) === i);   // dedupe
+
+  const entry = {
+    address,
+    sanctioned:    sanctionsData?.sanctioned || false,
+    sanction_lists,
+    mode:          mode || _etherscanType,
+  };
+
+  try {
+    const res = await fetch('/api/address-history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    const saved = await res.json();
+    // Update in-memory list (dedupe then prepend)
+    _addrHistory = _addrHistory.filter(h => h.address !== address);
+    _addrHistory.unshift(saved);
+    _addrHistoryRefreshSidebar();
+  } catch (_) {}
+}
+
+function addrHistoryLoad(address) {
+  const input = document.getElementById('etherscan-input');
+  if (input) {
+    input.value = address;
+    etherscanLookup();
+  }
+}
+
+async function addrHistoryDelete(address) {
+  await fetch(`/api/address-history/${encodeURIComponent(address)}`, { method: 'DELETE' });
+  _addrHistory = _addrHistory.filter(h => h.address !== address);
+  _addrHistoryRefreshSidebar();
+}
+
+async function addrHistoryClear() {
+  if (!confirm('Clear all address history?')) return;
+  await fetch('/api/address-history', { method: 'DELETE' });
+  _addrHistory = [];
+  _addrHistoryRefreshSidebar();
+}
+
+// ── End Address History ───────────────────────────────────────────────────────
 
 function _loadChartJs(cb) {
   if (window.Chart) { cb(); return; }
