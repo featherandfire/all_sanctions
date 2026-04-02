@@ -12,7 +12,7 @@ async function renderCyberView(tab) {
     const res = await fetch('/api/cyber');
     _cyberMeta = await res.json();
   }
-  const { datasets, total_entities, total_targets, category_counts } = _cyberMeta;
+  const { datasets, total_entities, total_targets, category_counts, sdn_crypto_count } = _cyberMeta;
 
   // Tab bar
   const tabBar = `
@@ -37,6 +37,11 @@ async function renderCyberView(tab) {
       <div class="stat-card"><div class="stat-label">Datasets</div><div class="stat-value accent">${datasets.length}</div></div>
       <div class="stat-card"><div class="stat-label">Total Entities</div><div class="stat-value" style="color:var(--yellow)">${total_entities.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-label">Total Targets</div><div class="stat-value green">${total_targets.toLocaleString()}</div></div>
+      <div class="stat-card" onclick="renderCyberView('crypto')" style="cursor:pointer;border-color:#c0392b55">
+        <div class="stat-label">OFAC SDN Crypto Addresses</div>
+        <div class="stat-value" style="color:#e74c3c">${sdn_crypto_count != null ? sdn_crypto_count.toLocaleString() : '—'}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">CryptoWallet records on SDN list</div>
+      </div>
     </div>`;
 
   if (_cyberTab === 'datasets') {

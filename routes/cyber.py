@@ -108,11 +108,16 @@ def api_cyber():
         c = d["cyber_category"]
         category_counts[c] = category_counts.get(c, 0) + 1
 
+    # Count OFAC SDN crypto wallet records — use L1/L2 cache so this is fast
+    sdn_rows = _get_entities("us_ofac_sdn")
+    sdn_crypto_count = sum(1 for r in sdn_rows if _is_crypto_entity(r))
+
     return jsonify({
         "datasets": serialized,
         "total_entities": total_entities,
         "total_targets": total_targets,
         "category_counts": category_counts,
+        "sdn_crypto_count": sdn_crypto_count,
     })
 
 
