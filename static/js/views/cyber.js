@@ -522,7 +522,10 @@ async function etherscanLookup() {
             </div>`;
         } else {
           tile.style.cssText = 'background:#0a1a0f;border:1px solid #27ae60;border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px';
-          tile.innerHTML = `<span style="font-size:18px">✅</span><div><div style="font-size:13px;font-weight:600;color:#2ecc71">Not found on sanctions lists</div><div style="font-size:11px;color:var(--muted);margin-top:1px">Checked against 12 lists including OFAC SDN, UN, EU, UK, and more</div></div>`;
+          const checked = sanctionsData.checked_datasets || 0;
+          const total   = sanctionsData.total_datasets   || 12;
+          const partial = checked < total ? ` (${checked}/${total} lists loaded — results improve as cache warms)` : ` · all ${total} lists`;
+          tile.innerHTML = `<span style="font-size:18px">✅</span><div><div style="font-size:13px;font-weight:600;color:#2ecc71">Not found on sanctions lists</div><div style="font-size:11px;color:var(--muted);margin-top:1px">Checked against OFAC SDN, UN, EU, UK, and more${partial}</div></div>`;
         }
       }
 

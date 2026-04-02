@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from flask import Blueprint, jsonify, request
-from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch
+from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch, _entity_cache
 import cache as l2
 
 # Ensure the project root is on the path so config.py is always importable
@@ -312,24 +312,41 @@ def api_cyber_records():
     return jsonify({"results": results, "searched": searched, "total": len(results)})
 
 
+def _cached_datasets():
+    """
+    Return only datasets that are already in L1 or L2 — never trigger a
+    cold network fetch during a sanctions check request.
+    """
+    ready = []
+    for ds_name in CRYPTO_SCAN_DATASETS:
+        if ds_name in _entity_cache:
+            ready.append((ds_name, _entity_cache[ds_name]))
+            continue
+        rows = l2.get("entity", ds_name)
+        if rows is not None:
+            _entity_cache[ds_name] = rows   # warm L1 while we're here
+            ready.append((ds_name, rows))
+    return ready
+
+
 @cyber_bp.route("/api/sanctions-check")
 def api_sanctions_check():
     """
     Check whether a crypto address appears on any sanctions list.
-    Query param: address (case-insensitive).
-    Result is cached in L2 for 1 hour.
+    Only scans datasets already in L1/L2 — never blocks on a cold fetch.
+    Result cached in L2 for 1 hour.
     """
     address = (request.args.get("address") or "").strip().lower()
     if not address:
-        return jsonify({"matches": [], "sanctioned": False})
+        return jsonify({"matches": [], "sanctioned": False, "checked_datasets": 0})
 
     cached = l2.get("sanctions_check", address)
     if cached is not None:
         return jsonify(cached)
 
     matches = []
-    for ds_name in CRYPTO_SCAN_DATASETS:
-        rows = _get_entities(ds_name)
+    ready = _cached_datasets()
+    for ds_name, rows in ready:
         for row in rows:
             pub = (row.get("publicKey") or "").strip().lower()
             cap = (row.get("caption")   or "").strip().lower()
@@ -346,27 +363,34 @@ def api_sanctions_check():
                     "first_seen":         row.get("first_seen", ""),
                 })
 
-    result = {"matches": matches, "sanctioned": len(matches) > 0}
-    l2.set("sanctions_check", address, result)
+    result = {
+        "matches": matches,
+        "sanctioned": len(matches) > 0,
+        "checked_datasets": len(ready),
+        "total_datasets": len(CRYPTO_SCAN_DATASETS),
+    }
+    # Only cache if we scanned all datasets — partial results shouldn't persist
+    if len(ready) == len(CRYPTO_SCAN_DATASETS):
+        l2.set("sanctions_check", address, result)
     return jsonify(result)
 
 
 @cyber_bp.route("/api/sanctions-check-batch", methods=["POST"])
 def api_sanctions_check_batch():
     """
-    Check a list of crypto addresses against all sanctions lists in one pass.
+    Check a list of crypto addresses against all cached sanctions lists.
+    Only scans datasets already in L1/L2 — never blocks on a cold fetch.
     Body: {"addresses": ["0x...", ...]}
     Returns: {"hits": {"0x...": {"datasets": [...], "holder": "..."}}}
     """
     body      = request.get_json(force=True) or {}
     addresses = {a.strip().lower() for a in (body.get("addresses") or []) if a}
     if not addresses:
-        return jsonify({"hits": {}})
+        return jsonify({"hits": {}, "checked_datasets": 0})
 
-    # Build a lookup: address -> hit info in a single scan per dataset
-    hits = {}
-    for ds_name in CRYPTO_SCAN_DATASETS:
-        rows = _get_entities(ds_name)
+    hits  = {}
+    ready = _cached_datasets()
+    for ds_name, rows in ready:
         for row in rows:
             pub = (row.get("publicKey") or "").strip().lower()
             cap = (row.get("caption")   or "").strip().lower()
@@ -377,7 +401,7 @@ def api_sanctions_check_batch():
                 if ds_name not in hits[addr]["datasets"]:
                     hits[addr]["datasets"].append(ds_name)
 
-    return jsonify({"hits": hits})
+    return jsonify({"hits": hits, "checked_datasets": len(ready), "total_datasets": len(CRYPTO_SCAN_DATASETS)})
 
 
 def _load_notes():
