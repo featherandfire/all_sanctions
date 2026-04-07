@@ -1,5 +1,5 @@
 let allDatasets = [];
-let currentView = 'datasets';
+let currentView = 'home';
 let currentLayout = 'grid';
 let searchTimer = null;
 
@@ -11,7 +11,7 @@ let _tagsMeta  = null;
 
 async function init() {
   await loadDatasets();
-  renderDatasetsView();
+  renderHomeView();
 }
 
 async function loadDatasets() {
@@ -41,14 +41,15 @@ function switchView(view) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
   });
-  const titles = { datasets: 'Browse Datasets', stats: 'Statistics', cyber: 'Cyber & Crypto', pep: 'Politically Exposed Persons', medicaid: 'Medicaid Exclusions', 'entity-search': 'Entity Search', countries: 'By Country', tags: 'Tags' };
+  const titles = { home: 'Home', datasets: 'Browse Datasets', stats: 'Statistics', cyber: 'Cyber & Crypto', pep: 'Politically Exposed Persons', medicaid: 'Medicaid Exclusions', 'entity-search': 'Entity Search', countries: 'By Country', tags: 'Tags' };
   document.getElementById('page-title').textContent = titles[view];
   const isDatasets = view === 'datasets';
   document.getElementById('search-wrap').style.display = isDatasets ? '' : 'none';
   document.getElementById('filter-select').style.display = isDatasets ? '' : 'none';
   document.getElementById('view-toggle').style.display = isDatasets ? '' : 'none';
 
-  if (view === 'datasets') renderDatasetsView();
+  if (view === 'home') renderHomeView();
+  else if (view === 'datasets') renderDatasetsView();
   else if (view === 'stats') renderStatsView();
   else if (view === 'cyber') renderCyberView();
   else if (view === 'pep') renderPepView();
