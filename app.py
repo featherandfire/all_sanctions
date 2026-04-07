@@ -37,45 +37,54 @@ with app.app_context():
 
 def _background_warmup():
     """
-    Pre-load expensive datasets into L1/L2 cache after startup so users never
-    hit cold-cache latency.  Runs in a daemon thread — does not block startup.
+    Promote already-cached datasets from L2 (SQLite) → L1 (in-memory) at
+    startup.  This is a read-only operation — it NEVER makes network requests.
 
-    Priority order:
-      1. Medicaid exclusion datasets (sector.usmed.debarment) — most expensive
-      2. DEFAULT_SEARCH_DATASETS (sanctions screening)
+    Network fetches only happen when a user actually requests data that isn't
+    in either cache layer.  Keeping warmup network-free prevents the worker
+    timeout cascade that occurs when both sync workers block on simultaneous
+    L3 origin fetches during startup.
     """
     import time
-    from data import fetch_index, visible_datasets, _get_entities, DEFAULT_SEARCH_DATASETS
+    from data import _entity_cache
+    import cache as _l2
 
-    time.sleep(3)  # let Gunicorn finish binding before hammering the network
+    time.sleep(2)  # let Gunicorn finish binding
 
-    logger.info("Cache warmup: starting background pre-load")
+    logger.info("Cache warmup: promoting L2 → L1 (no network)")
     try:
-        index = fetch_index()
-        ds_list = visible_datasets(index["datasets"])
+        conn = _l2._conn()
+        now  = time.time()
+        rows = conn.execute(
+            """
+            SELECT identifier, source, key FROM (
+                SELECT
+                    SUBSTR(key, INSTR(key, ':') + 1) AS identifier,
+                    source,
+                    key,
+                    created_at,
+                    ttl
+                FROM cache
+                WHERE source = 'entity'
+                  AND (? - created_at) < ttl
+            )
+            """,
+            (now,),
+        ).fetchall()
 
-        # Collect datasets by priority
-        warmup_tags = {"sector.usmed.debarment", "list.pep"}
-        tagged = [
-            d["name"] for d in ds_list
-            if set(d.get("tags", [])) & warmup_tags
-            and any(r["name"] in ("targets.nested.json", "targets.simple.csv")
-                    for r in d.get("resources", []))
-        ]
+        promoted = 0
+        for row in rows:
+            ds_name = row[0]
+            if ds_name in _entity_cache:
+                continue  # already in L1
+            data = _l2.get("entity", ds_name)
+            if data is not None:
+                _entity_cache[ds_name] = data
+                promoted += 1
 
-        targets = tagged + [n for n in DEFAULT_SEARCH_DATASETS if n not in tagged]
-
-        for name in targets:
-            try:
-                _get_entities(name)
-                logger.info("Cache warmup: loaded %s", name)
-            except Exception as exc:
-                logger.warning("Cache warmup: failed %s — %s", name, exc)
-
+        logger.info("Cache warmup: promoted %d datasets from L2 → L1", promoted)
     except Exception as exc:
         logger.warning("Cache warmup: aborted — %s", exc)
-
-    logger.info("Cache warmup: complete")
 
 
 _warmup_thread = threading.Thread(target=_background_warmup, daemon=True)
