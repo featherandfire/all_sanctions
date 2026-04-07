@@ -5,11 +5,15 @@ OpenSanctions Web UI — application factory.
 
 import sys
 import os
+import threading
+import logging
 
 # Allow imports from project root when running from any directory
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, jsonify, render_template
+
+logger = logging.getLogger(__name__)
 from routes.datasets import datasets_bp
 from routes.cyber import cyber_bp
 from routes.entity_search import entity_search_bp
@@ -29,6 +33,53 @@ app.register_blueprint(census_bp)
 with app.app_context():
     l2.init()
     purged = l2.purge_expired()
+
+
+def _background_warmup():
+    """
+    Pre-load expensive datasets into L1/L2 cache after startup so users never
+    hit cold-cache latency.  Runs in a daemon thread — does not block startup.
+
+    Priority order:
+      1. Medicaid exclusion datasets (sector.usmed.debarment) — most expensive
+      2. DEFAULT_SEARCH_DATASETS (sanctions screening)
+    """
+    import time
+    from data import fetch_index, visible_datasets, _get_entities, DEFAULT_SEARCH_DATASETS
+
+    time.sleep(3)  # let Gunicorn finish binding before hammering the network
+
+    logger.info("Cache warmup: starting background pre-load")
+    try:
+        index = fetch_index()
+        ds_list = visible_datasets(index["datasets"])
+
+        # Collect datasets by priority
+        warmup_tags = {"sector.usmed.debarment", "list.pep"}
+        tagged = [
+            d["name"] for d in ds_list
+            if set(d.get("tags", [])) & warmup_tags
+            and any(r["name"] in ("targets.nested.json", "targets.simple.csv")
+                    for r in d.get("resources", []))
+        ]
+
+        targets = tagged + [n for n in DEFAULT_SEARCH_DATASETS if n not in tagged]
+
+        for name in targets:
+            try:
+                _get_entities(name)
+                logger.info("Cache warmup: loaded %s", name)
+            except Exception as exc:
+                logger.warning("Cache warmup: failed %s — %s", name, exc)
+
+    except Exception as exc:
+        logger.warning("Cache warmup: aborted — %s", exc)
+
+    logger.info("Cache warmup: complete")
+
+
+_warmup_thread = threading.Thread(target=_background_warmup, daemon=True)
+_warmup_thread.start()
 
 
 @app.route("/")

@@ -21,6 +21,7 @@ Call l2.purge_expired() at startup to clear stale rows.
 Call l2.stats() to inspect hit rates per source.
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -28,6 +29,7 @@ import os
 import sqlite3
 import threading
 import time
+import zlib
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,29 @@ TTL = {
     "eth_txlist":         600,   # 10 m  — transaction list
     "eth_tokentx":        600,   # 10 m  — token transfers
     "census":         604_800,   #  7 d  — Census API responses
+    "medicaid_stats":   3_600,   #  1 h  — pre-aggregated medicaid stat results
 }
+
+# ── Compression ───────────────────────────────────────────────────────────────
+# Large payloads (entity records, etc.) are stored zlib-compressed to reduce
+# disk I/O. A "z:" prefix marks compressed entries; plain JSON entries are read
+# as-is for backward compatibility with any pre-existing uncompressed rows.
+
+_ZLIB_MARKER  = "z:"
+_COMPRESS_MIN = 4096   # bytes — only compress payloads larger than this
+
+
+def _pack(data) -> str:
+    raw = json.dumps(data, default=str).encode()
+    if len(raw) >= _COMPRESS_MIN:
+        return _ZLIB_MARKER + base64.b64encode(zlib.compress(raw, level=6)).decode()
+    return raw.decode()
+
+
+def _unpack(text: str):
+    if text.startswith(_ZLIB_MARKER):
+        return json.loads(zlib.decompress(base64.b64decode(text[len(_ZLIB_MARKER):])))
+    return json.loads(text)
 _DEFAULT_TTL = 3_600
 
 
@@ -150,7 +174,7 @@ def get(source: str, identifier: str, params: dict = None):
         conn.commit()
     except sqlite3.OperationalError:
         pass
-    return json.loads(row["data"])
+    return _unpack(row["data"])
 
 
 def set(source: str, identifier: str, data, params: dict = None, ttl: int = None):
@@ -173,7 +197,7 @@ def set(source: str, identifier: str, data, params: dict = None, ttl: int = None
                     hit_count  = 0,
                     last_hit   = NULL
             """,
-            (key, source, json.dumps(data, default=str), time.time(), ttl),
+            (key, source, _pack(data), time.time(), ttl),
         )
         _log(conn, source, "set")
         conn.commit()

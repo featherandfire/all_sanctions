@@ -7,6 +7,7 @@ import re
 from collections import Counter
 from flask import Blueprint, jsonify, request
 from data import fetch_index, visible_datasets, serialize_dataset, _get_entities, _get_entities_batch, _cache, _entity_cache
+import cache as l2
 
 _geo = None
 _city_zip_cache = {}
@@ -304,17 +305,26 @@ def _normalize_sector(s):
     return _SECTOR_ALIASES.get(s.strip().lower(), s.strip())
 
 
-def _medicaid_counts(keys_fn):
-    """Aggregate medicaid entities via a per-row key extractor and return a sorted label/value list."""
+def _medicaid_counts(cache_key: str, keys_fn):
+    """Aggregate medicaid entities via a per-row key extractor, with L2 caching."""
+    ds_param = request.args.get("datasets") or request.args.get("dataset") or "us_ca_med_exclusions"
+    l2_key = f"{cache_key}:{ds_param}"
+
+    cached = l2.get("medicaid_stats", l2_key)
+    if cached is not None:
+        return jsonify(cached)
+
     counts = Counter()
     for row in _medicaid_entities():
         for key in keys_fn(row):
             if key:
                 counts[key] += 1
-    return jsonify(sorted(
+    result = sorted(
         [{"label": k, "value": v} for k, v in counts.items()],
         key=lambda x: -x["value"]
-    ))
+    )
+    l2.set("medicaid_stats", l2_key, result)
+    return jsonify(result)
 
 
 @datasets_bp.route("/api/stats/medicaid-date-coverage")
@@ -344,21 +354,33 @@ def api_medicaid_date_coverage():
 @datasets_bp.route("/api/stats/medicaid-by-year")
 def api_medicaid_by_year():
     """Exclusion counts grouped by year of first_seen."""
+    ds_param = request.args.get("datasets") or request.args.get("dataset") or "us_ca_med_exclusions"
+    l2_key = f"by-year:{ds_param}"
+    cached = l2.get("medicaid_stats", l2_key)
+    if cached is not None:
+        return jsonify(cached)
+
     counts = Counter()
     for row in _medicaid_entities():
         val = row.get("first_seen") or ""
         year = val[:4]
         if year.isdigit() and 2000 <= int(year) <= 2100:
             counts[year] += 1
-    return jsonify(sorted(
+    result = sorted(
         [{"label": k, "value": v} for k, v in counts.items()],
         key=lambda x: x["label"]
-    ))
+    )
+    l2.set("medicaid_stats", l2_key, result)
+    return jsonify(result)
 
 
 @datasets_bp.route("/api/stats/medicaid-state-sectors")
 def api_medicaid_state_sectors():
     """Per-state breakdown of top 5 sectors for stacked bar chart."""
+    cached = l2.get("medicaid_stats", "state-sectors")
+    if cached is not None:
+        return jsonify(cached)
+
     index = fetch_index()
     ds_names = [
         d["name"] for d in index["datasets"]
@@ -401,31 +423,34 @@ def api_medicaid_state_sectors():
         states_data.append(entry)
 
     states_data.sort(key=lambda x: -x["total"])
-    return jsonify({"sectors": keys, "states": states_data[:20]})
+    result = {"sectors": keys, "states": states_data[:20]}
+    l2.set("medicaid_stats", "state-sectors", result)
+    return jsonify(result)
 
 
 @datasets_bp.route("/api/stats/medicaid-by-zipcode")
 def api_medicaid_by_zipcode():
     """Zip code breakdown across one or more Medicaid datasets."""
-    return _medicaid_counts(lambda r: [_zip_from_address(r.get("address"))])
+    return _medicaid_counts("by-zipcode", lambda r: [_zip_from_address(r.get("address"))])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-city")
 def api_medicaid_by_city():
     """City breakdown across one or more Medicaid datasets."""
-    return _medicaid_counts(lambda r: [_city_from_address(r.get("address"))])
+    return _medicaid_counts("by-city", lambda r: [_city_from_address(r.get("address"))])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-schema")
 def api_medicaid_by_schema():
     """Person vs Organisation breakdown across one or more Medicaid datasets."""
-    return _medicaid_counts(lambda r: [r.get("schema") or "Unknown"])
+    return _medicaid_counts("by-schema", lambda r: [r.get("schema") or "Unknown"])
 
 
 @datasets_bp.route("/api/stats/medicaid-by-sector")
 def api_medicaid_by_sector():
     """Sector breakdown across one or more Medicaid datasets."""
     return _medicaid_counts(
+        "by-sector",
         lambda r: [_normalize_sector(p) for p in (r.get("sector") or r.get("position") or r.get("title") or "").split(",")]
     )
 
