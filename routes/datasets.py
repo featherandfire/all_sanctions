@@ -273,11 +273,41 @@ def api_pep_records():
     return _build_record_list("list.pep", ds_names)
 
 
+def _warm_medicaid_names():
+    """
+    Return medicaid dataset names that are already in L1 or L2 cache.
+    Never triggers a network fetch — safe to call inside a request handler
+    without risking a Cloudflare 524 timeout.
+    """
+    index = fetch_index()
+    all_names = [
+        d["name"] for d in index["datasets"]
+        if "sector.usmed.debarment" in d.get("tags", [])
+        and not d.get("hidden") and not d.get("deprecated")
+        and any(r["name"] in ("targets.nested.json", "targets.simple.csv")
+                for r in d.get("resources", []))
+    ]
+    return [
+        n for n in all_names
+        if n in _entity_cache or l2.exists("entity", n)
+    ]
+
+
 def _medicaid_entities(default="us_ca_med_exclusions"):
-    """Return all entity rows for the requested dataset(s).
+    """Return entity rows for warm (cached) medicaid datasets only.
+    Falls back to the default single dataset if nothing is warm yet,
+    so the page always renders something rather than timing out.
     Accepts ?datasets=name1,name2 (comma-separated) or legacy ?dataset=name."""
-    raw = request.args.get("datasets") or request.args.get("dataset") or default
-    names = [n.strip() for n in raw.split(",") if n.strip()]
+    raw = request.args.get("datasets") or request.args.get("dataset") or ""
+    if raw:
+        # Caller specified datasets explicitly — honour that, load from cache only
+        names = [n.strip() for n in raw.split(",") if n.strip()]
+        warm  = [n for n in names if n in _entity_cache or l2.exists("entity", n)]
+        names = warm or names[:1]   # at most one cold fetch if nothing warm
+    else:
+        warm = _warm_medicaid_names()
+        names = warm if warm else [default]
+
     if len(names) == 1:
         return _get_entities(names[0])
     batch = _get_entities_batch(names)
@@ -381,12 +411,9 @@ def api_medicaid_state_sectors():
     if cached is not None:
         return jsonify(cached)
 
-    index = fetch_index()
-    ds_names = [
-        d["name"] for d in index["datasets"]
-        if "sector.usmed.debarment" in d.get("tags", [])
-        and not d.get("hidden") and not d.get("deprecated")
-    ]
+    ds_names = _warm_medicaid_names()
+    if not ds_names:
+        return jsonify({"sectors": [], "states": [], "partial": True})
 
     def _state_abbr(name):
         m = re.match(r'^us_([a-z]{2})_', name)

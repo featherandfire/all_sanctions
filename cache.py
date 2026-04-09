@@ -205,6 +205,18 @@ def set(source: str, identifier: str, data, params: dict = None, ttl: int = None
         logger.warning("L2 set skipped (db locked): %s/%s — %s", source, identifier, e)
 
 
+def exists(source: str, identifier: str, params: dict = None) -> bool:
+    """Return True if a live (non-expired) entry exists without deserialising it."""
+    key  = _make_key(source, identifier, params)
+    conn = _conn()
+    now  = time.time()
+    row  = conn.execute(
+        "SELECT 1 FROM cache WHERE key = ? AND (? - created_at) < ttl",
+        (key, now),
+    ).fetchone()
+    return row is not None
+
+
 def invalidate(source: str = None, identifier: str = None):
     """
     Remove entries.
