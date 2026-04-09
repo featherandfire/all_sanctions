@@ -10,8 +10,8 @@ let _tagsMeta  = null;
 // ── Init ──────────────────────────────────────────────────────────────────
 
 async function init() {
-  await loadDatasets();
-  renderHomeView();
+  renderHomeView();      // paint immediately — home page needs no API data
+  await loadDatasets();  // fetch dataset index in background for other views
 }
 
 async function loadDatasets() {
