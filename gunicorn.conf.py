@@ -4,11 +4,13 @@
 # inter-process memory duplication. preload_app=False keeps the master process
 # lightweight — no entity data loaded until a real request arrives.
 
-# 1 worker — sufficient for this workload; avoids duplicating large in-memory
-# entity caches across processes (which caused OOM on small EC2 instances).
+# 1 process with 4 threads — handles concurrent requests without duplicating
+# large in-memory entity caches across processes (which caused OOM).
+# gthread is built into Gunicorn, no extra packages needed.
 workers = 1
 
-worker_class = "sync"
+worker_class = "gthread"
+threads = 4
 
 # Allow up to 3 minutes for a single request (worst-case cold L3 fetch)
 timeout = 180
