@@ -284,16 +284,20 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           el.innerHTML = '';
           drawLollipopChart('pie-all-city', data.slice(0, 10).sort((a, b) => b.value - a.value), 'var(--green)');
         });
-      fetch('/api/stats/medicaid-state-sectors')
-        .then(r => r.json()).then(({ states }) => {
-          const el = document.getElementById('bar-all-states');
-          if (!el || !states.length) return;
-          const lollipopData = states
-            .map(d => ({ label: d.state, value: d.total }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 10);
-          drawHorizontalBarChart('bar-all-states', lollipopData, 'var(--accent2)', { marginLeft: 160 });
-        });
+      // Compute state totals from allDatasets index — no API call needed
+      {
+        const stateData = Object.entries(byState)
+          .map(([stateName, dsList]) => ({
+            label: stateName,
+            value: dsList.reduce((s, d) => s + (d.entity_count || 0), 0)
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10);
+        const el = document.getElementById('bar-all-states');
+        if (el && stateData.length) {
+          drawHorizontalBarChart('bar-all-states', stateData, 'var(--accent2)', { marginLeft: 160 });
+        }
+      }
       fetch('/api/stats/medicaid-year-by-state')
         .then(r => r.json()).then(({ sectors, states }) => {
           const el = document.getElementById('bar-all-year');
