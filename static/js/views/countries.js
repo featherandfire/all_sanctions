@@ -38,7 +38,8 @@ function renderCountryView(selectCode) {
 
   const content = document.getElementById('content');
   content.innerHTML = `
-    <div style="display:flex;gap:0;height:calc(100vh - 65px);margin:-24px;overflow:hidden">
+    <div class="home-banner-wrap home-banner-wrap--sm"><canvas id="countries-banner-canvas"></canvas></div>
+    <div style="display:flex;gap:0;height:calc(100vh - 65px - 40px);margin:0 -24px -24px -24px;overflow:hidden">
 
       <!-- Country list (left panel) -->
       <div style="width:260px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">
@@ -72,6 +73,7 @@ function renderCountryView(selectCode) {
         </div>
       </div>
     </div>`;
+  BannerAnimation.init(document.getElementById('countries-banner-canvas'));
 }
 
 function renderCountryRow(c, active) {

@@ -1,19 +1,27 @@
 function renderDatasetsView(datasets) {
   const data = datasets || allDatasets;
   const content = document.getElementById('content');
-  if (!data.length) {
-    content.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div>No datasets found</div></div>`;
-    return;
-  }
 
   const grid = currentLayout === 'grid' ? 'cards-grid' : 'cards-list';
   const cards = data.map(ds => currentLayout === 'grid' ? renderCard(ds) : renderListCard(ds)).join('');
-  content.innerHTML = `
-    <div class="results-header">
-      <div class="results-count">${data.length.toLocaleString()} dataset${data.length !== 1 ? 's' : ''}</div>
-    </div>
-    <div class="${grid}">${cards}</div>
-  `;
+  const resultsHtml = data.length
+    ? `<div class="results-header"><div class="results-count">${data.length.toLocaleString()} dataset${data.length !== 1 ? 's' : ''}</div></div>
+       <div class="${grid}">${cards}</div>`
+    : `<div class="empty"><div class="empty-icon">🔍</div><div>No datasets found</div></div>`;
+
+  // Only inject the banner on the first render; subsequent search re-renders
+  // update just the results pane so the animation keeps running uninterrupted.
+  if (!BannerAnimation.isActive() || !document.getElementById('datasets-banner-canvas')) {
+    content.innerHTML = `
+      <div class="home-banner-wrap home-banner-wrap--sm">
+        <canvas id="datasets-banner-canvas"></canvas>
+      </div>
+      <div id="datasets-results">${resultsHtml}</div>
+    `;
+    BannerAnimation.init(document.getElementById('datasets-banner-canvas'));
+  } else {
+    document.getElementById('datasets-results').innerHTML = resultsHtml;
+  }
 }
 
 function renderCard(ds) {

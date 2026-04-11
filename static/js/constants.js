@@ -15,7 +15,7 @@ const US_STATE_NAMES = {
 // Deterministic HSL color per state — same state = same color across every chart
 const STATE_COLOR_MAP = (() => {
   const names = Object.values(US_STATE_NAMES).sort();
-  const map = { Federal: '#94a3b8' };
+  const map = { Federal: '#9ca3af' };
   names.forEach((s, i) => {
     const h = Math.round((i / names.length) * 360);
     map[s] = `hsl(${h},62%,54%)`;
@@ -31,19 +31,19 @@ function _hashColor(str) {
 }
 
 const CATEGORY_META = {
-  'crypto':         { label: 'Cryptocurrency',    color: '#f6c90e', icon: '₿' },
-  'ransomware':     { label: 'Ransomware',         color: '#f56565', icon: '🔒' },
+  'crypto':         { label: 'Cryptocurrency',    color: '#facc15', icon: '₿' },
+  'ransomware':     { label: 'Ransomware',         color: '#ef4444', icon: '🔒' },
   'state-sponsored':{ label: 'State-Sponsored',   color: '#a78bfa', icon: '🎯' },
-  'cyber':          { label: 'Cyber Actors',       color: '#4f8ef7', icon: '💻' },
-  'darknet':        { label: 'Darknet',            color: '#fb923c', icon: '🕸' },
-  'other':          { label: 'Other',              color: '#64748b', icon: '⚠' },
+  'cyber':          { label: 'Cyber Actors',       color: '#60a5fa', icon: '💻' },
+  'darknet':        { label: 'Darknet',            color: '#f97316', icon: '🕸' },
+  'other':          { label: 'Other',              color: '#9ca3af', icon: '⚠' },
 };
 
 const SCHEMA_COLORS = {
-  CryptoWallet: '#f6c90e', Person: '#4f8ef7', Organization: '#3ecf8e',
-  Company: '#3ecf8e', LegalEntity: '#3ecf8e', Vessel: '#fb923c',
-  Vehicle: '#fb923c', Sanction: '#f56565', Position: '#a78bfa',
-  Address: '#64748b',
+  CryptoWallet: '#facc15', Person: '#60a5fa', Organization: '#34d399',
+  Company: '#34d399', LegalEntity: '#34d399', Vessel: '#f97316',
+  Vehicle: '#f97316', Sanction: '#ef4444', Position: '#a78bfa',
+  Address: '#9ca3af',
 };
 
 // Priority column order — any keys found in results but not listed here appear after

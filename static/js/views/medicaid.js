@@ -76,10 +76,10 @@ function renderMedicaidStatStrip(state, byState, medDatasets, totalStates) {
   const statesVal = state === 'all' ? totalStates : 1;
   return `
     <div class="stats-grid" style="margin-bottom:20px">
-      <div class="stat-card"><div class="stat-label">Datasets</div><div class="stat-value accent">${dsList.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Total International References</div><div class="stat-value red">${entities.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-label">Records in Current Dataset</div><div class="stat-value">${targets.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-label">States</div><div class="stat-value">${statesVal}</div></div>
+      <div class="stat-card"><div class="stat-value">${dsList.length}</div><div class="stat-label">Datasets</div></div>
+      <div class="stat-card"><div class="stat-value">${entities.toLocaleString()}</div><div class="stat-label">Total International References</div></div>
+      <div class="stat-card"><div class="stat-value">${targets.toLocaleString()}</div><div class="stat-label">Records in Current Dataset</div></div>
+      <div class="stat-card"><div class="stat-value">${statesVal}</div><div class="stat-label">States</div></div>
     </div>`;
 }
 
@@ -109,13 +109,14 @@ async function renderMedicaidView(tab) {
 
   const statStrip = `<div id="med-stat-strip">${renderMedicaidStatStrip('all', byState, medDatasets, stateList.length)}</div>`;
 
+  let bodyHtml;
   if (_medicaidTab === 'datasets') {
     // Ensure selected state is valid
     if (_selectedMedicaidState !== 'all' && !byState[_selectedMedicaidState]) {
       _selectedMedicaidState = 'all';
     }
 
-    content.innerHTML = tabBar + statStrip + `
+    bodyHtml = tabBar + statStrip + `
       <div class="med-split-layout">
 
         <!-- State list (left panel) -->
@@ -139,11 +140,22 @@ async function renderMedicaidView(tab) {
       </div>`;
 
   } else if (_medicaidTab === 'nppes') {
-    content.innerHTML = tabBar + renderNppesView(byState);
+    bodyHtml = tabBar + renderNppesView(byState);
+  } else {
+    bodyHtml = tabBar + statStrip + `<div id="med-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading Medicaid exclusion records…</div></div></div>`;
+  }
+
+  if (!BannerAnimation.isActive() || !document.getElementById('medicaid-banner-canvas')) {
+    content.innerHTML = `<div class="home-banner-wrap home-banner-wrap--sm"><canvas id="medicaid-banner-canvas"></canvas></div><div id="medicaid-body">${bodyHtml}</div>`;
+    BannerAnimation.init(document.getElementById('medicaid-banner-canvas'));
+  } else {
+    document.getElementById('medicaid-body').innerHTML = bodyHtml;
+  }
+
+  if (_medicaidTab === 'nppes') {
     const _t = document.getElementById('nppes-tile-total');
     if (_t) _t.textContent = '~8,000,000';
-  } else {
-    content.innerHTML = tabBar + statStrip + `<div id="med-records-body"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading Medicaid exclusion records…</div></div></div>`;
+  } else if (_medicaidTab === 'records') {
     await loadMedicaidPage(0);
   }
 }
@@ -162,7 +174,7 @@ function renderMedicaidStateRows(stateList, medDatasets) {
   const rows = stateList.map(([state, dsList]) => {
     const active = _selectedMedicaidState === state;
     const n = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
-    const color = STATE_COLOR_MAP[state] || '#94a3b8';
+    const color = STATE_COLOR_MAP[state] || '#9ca3af';
     return `<div class="country-row med-state-row" data-state="${esc(state)}" onclick="selectMedicaidState('${esc(state)}')"
       style="background:${active ? 'var(--surface2)' : 'transparent'};border-left:3px solid ${active ? 'var(--accent)' : 'transparent'}">
       <span class="med-color-dot" style="width:12px;height:12px;background:${color}"></span>
@@ -182,7 +194,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
   const dsList = state === 'all' ? medDatasets : (byState[state] || []);
   const sorted = [...dsList].sort((a, b) => (b.target_count || 0) - (a.target_count || 0));
   const totalTargets = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
-  const color = state !== 'all' ? (STATE_COLOR_MAP[state] || '#94a3b8') : null;
+  const color = state !== 'all' ? (STATE_COLOR_MAP[state] || '#9ca3af') : null;
 
   const header = `
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">
@@ -231,27 +243,25 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
   if (state === 'all') {
     const dsParam = medDatasets.map(d => d.name).join(',');
     _medicaidDsParam = dsParam;
-    const targets = dsList.reduce((s, d) => s + (d.target_count || 0), 0);
-    const centerVal = targets >= 1000 ? (targets / 1000).toFixed(1) + 'k' : targets.toLocaleString();
     sectorSection = `
       <div id="med-sector-grid" class="med-sector-grid" style="margin-bottom:24px">
+        <div id="med-cell-year-all" style="grid-column:1/-1">
+          <div class="med-chart-label">Exclusions by Year <span style="font-weight:400;color:var(--muted)">(first seen — top 10 states)</span></div>
+          <div id="bar-all-year"><div class="med-placeholder-text">Loading…</div></div>
+          <div id="bar-all-year-legend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--muted)"></div>
+        </div>
+        <div id="med-cell-state-all" style="grid-column:1/-1">
+          <div class="med-chart-label">Offenses by State <span style="font-weight:400;color:var(--muted)">(top 10)</span></div>
+          <div id="bar-all-states"></div>
+        </div>
         <div id="med-cell-sector-all">
-          <div class="med-chart-label">Offenses by Sector <span style="font-weight:400;color:var(--muted)">(All States)</span></div>
-          <div id="pie-all-sector" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
+          <div class="med-chart-label">Offenses by Sector <span style="font-weight:400;color:var(--muted)">(top 10)</span></div>
+          <div id="pie-all-sector"><div class="med-placeholder-text">Loading…</div></div>
           <div id="pie-all-sector-footnote" style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5"></div>
         </div>
         <div id="med-cell-city-all">
-          <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
-          <div id="pie-all-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
-        </div>
-        <div id="med-cell-state-all" style="grid-column:1/-1">
-          <div class="med-chart-label">Top Offenses by State <span style="font-weight:400;color:var(--muted)">(top 20 sectors)</span></div>
-          <div id="bar-all-states"></div>
-          <div id="bar-all-states-legend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--muted)"></div>
-        </div>
-        <div id="med-cell-year-all" style="grid-column:1/-1">
-          <div class="med-chart-label">Exclusions by Year <span style="font-weight:400;color:var(--muted)">(first seen)</span></div>
-          <div id="bar-all-year"></div>
+          <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 10)</span></div>
+          <div id="pie-all-city"><div class="med-placeholder-text">Loading…</div></div>
         </div>
       </div>`;
     setTimeout(() => {
@@ -259,40 +269,40 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
         .then(r => r.json()).then(data => {
           const el = document.getElementById('pie-all-sector');
           if (!el) return;
-          if (!data.length) { document.getElementById('med-cell-sector-all')?.remove(); return; }
+          if (!data.length) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:20px 0">No data available</div>'; return; }
           el.innerHTML = '';
-          const sliced = data.slice(0, 20);
-          const colors = _hslGradient(sliced.length);
-          drawPieChart('pie-all-sector', sliced, colors, {
-            unit: 'records',
-            centerValue: centerVal,
-            centerLabel: data.length + ' sectors',
-            totalOverride: targets,
-            legendFmt: (_v, pct) => pct + '%',
-          });
+          const sliced = data.slice(0, 10).sort((a, b) => b.value - a.value);
+          drawLollipopChart('pie-all-sector', sliced, 'var(--accent)');
           const fn = document.getElementById('pie-all-sector-footnote');
-          if (fn && data.length > sliced.length) fn.textContent = `** Showing top 20 of ${data.length} sectors`;
+          if (fn && data.length > sliced.length) fn.textContent = `** Showing top 10 of ${data.length} sectors`;
         });
       fetch(`/api/stats/medicaid-by-city?datasets=${encodeURIComponent(dsParam)}`)
         .then(r => r.json()).then(data => {
           const el = document.getElementById('pie-all-city');
           if (!el) return;
-          if (!data.length) { document.getElementById('med-cell-city-all')?.remove(); return; }
+          if (!data.length) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:20px 0">No data available</div>'; return; }
           el.innerHTML = '';
-          drawPieChart('pie-all-city', data.slice(0, 20), null, {
-            unit: 'records',
-            centerLabel: 'cities',
-            legendFmt: (_v, pct) => pct + '%',
-          });
+          drawLollipopChart('pie-all-city', data.slice(0, 10).sort((a, b) => b.value - a.value), 'var(--green)');
         });
       fetch('/api/stats/medicaid-state-sectors')
-        .then(r => r.json()).then(({ sectors, states }) => {
+        .then(r => r.json()).then(({ states }) => {
           const el = document.getElementById('bar-all-states');
           if (!el || !states.length) return;
-          drawStackedBarChart('bar-all-states', sectors, states);
-          const legendEl = document.getElementById('bar-all-states-legend');
+          const lollipopData = states
+            .map(d => ({ label: d.state, value: d.total }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10);
+          drawHorizontalBarChart('bar-all-states', lollipopData, 'var(--accent2)', { marginLeft: 160 });
+        });
+      fetch('/api/stats/medicaid-year-by-state')
+        .then(r => r.json()).then(({ sectors, states }) => {
+          const el = document.getElementById('bar-all-year');
+          if (!el || !states.length) return;
+          el.innerHTML = '';
+          drawHorizontalStackedBarChart('bar-all-year', sectors, states);
+          const legendEl = document.getElementById('bar-all-year-legend');
           if (legendEl) {
-            const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#e11d48','#0891b2','#65a30d','#9333ea','#ea580c','#64748b'];
+            const COLORS = ['#60a5fa','#34d399','#facc15','#a78bfa','#ef4444','#f97316','#9ca3af'];
             legendEl.innerHTML = sectors.map((s, i) =>
               `<span style="display:flex;align-items:center;gap:5px">
                 <span style="width:10px;height:10px;border-radius:2px;background:${COLORS[i]};flex-shrink:0"></span>
@@ -300,12 +310,6 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
               </span>`
             ).join('');
           }
-        });
-      fetch(`/api/stats/medicaid-by-year?datasets=${encodeURIComponent(dsParam)}`)
-        .then(r => r.json()).then(data => {
-          const el = document.getElementById('bar-all-year');
-          if (!el || !data.length) return;
-          drawBarChart('bar-all-year', data, 'var(--green)');
         });
     }, 0);
   } else {
@@ -318,7 +322,7 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           <div id="pie-sector-footnote" style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5"></div>
         </div>
         <div id="med-cell-city">
-          <div class="med-chart-label">Offenses by City <span style="font-weight:400;color:var(--muted)">(top 20)</span></div>
+          <div class="med-chart-label">Offenses by City</div>
           <div id="pie-state-city" class="med-chart-host"><div class="med-placeholder-text">Loading…</div></div>
         </div>
         <div id="med-cell-sectorzip">
@@ -342,15 +346,14 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
         .then(r => r.json()).then(data => {
           const el = document.getElementById('pie-state-sector');
           if (!el) return;
-          if (!data.length) { _removeMedCell('med-cell-sector'); return; }
+          if (!data.length) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:20px 0">No data available</div>'; return; }
           el.innerHTML = '';
           const sliced = data.slice(0, 20);
           const sectorColors = _hslGradient(sliced.length);
           // Build chips and attach event listeners
-          const tabData = sliced;
           const chipsEl = document.getElementById('pie-state-topsector-chips');
           if (chipsEl) {
-            chipsEl.innerHTML = tabData.map((d) => {
+            chipsEl.innerHTML = sliced.map((d) => {
               const acronym = d.label.split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 5);
               return `<a class="sector-chip" data-sector="${esc(d.label)}" href="#"
                 onmouseover="if(this.style.fontWeight!=='700'){this.style.color='var(--text)'}"
@@ -372,14 +375,14 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
           if (footnoteEl && data.length > sliced.length) {
             footnoteEl.textContent = `** Showing top 20 of ${data.length} sectors`;
           }
-          // Load first tab sector zip by default
-          _loadSectorZip(tabData[0]?.label || sliced[0]?.label);
+          // Load first sector zip by default
+          _loadSectorZip(sliced[0]?.label);
         });
       fetch(`/api/stats/medicaid-by-city?datasets=${encodeURIComponent(dsParam)}`)
         .then(r => r.json()).then(data => {
           const el = document.getElementById('pie-state-city');
           if (!el) return;
-          if (!data.length) { _removeMedCell('med-cell-city'); return; }
+          if (!data.length) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:20px 0">No data available</div>'; return; }
           el.innerHTML = '';
           drawPieChart('pie-state-city', data.slice(0, 20), null, {
             unit: 'records',
@@ -599,10 +602,10 @@ function renderNppesView(byState) {
   return `
     <div style="padding:4px 0 24px">
       <div class="stats-grid" style="margin-bottom:20px" id="nppes-stat-strip">
-        <div class="stat-card"><div class="stat-label">Registered NPIs</div><div class="stat-value accent" id="nppes-tile-total">—</div></div>
-        <div class="stat-card"><div class="stat-label">Individuals (NPI-1)</div><div class="stat-value" id="nppes-tile-individuals">—</div></div>
-        <div class="stat-card"><div class="stat-label">Organizations (NPI-2)</div><div class="stat-value" style="color:var(--yellow)" id="nppes-tile-orgs">—</div></div>
-        <div class="stat-card"><div class="stat-label">Active Providers</div><div class="stat-value green" id="nppes-tile-active">—</div></div>
+        <div class="stat-card"><div class="stat-value" id="nppes-tile-total">—</div><div class="stat-label">Registered NPIs</div></div>
+        <div class="stat-card"><div class="stat-value" id="nppes-tile-individuals">—</div><div class="stat-label">Individuals (NPI-1)</div></div>
+        <div class="stat-card"><div class="stat-value" id="nppes-tile-orgs">—</div><div class="stat-label">Organizations (NPI-2)</div></div>
+        <div class="stat-card"><div class="stat-value" id="nppes-tile-active">—</div><div class="stat-label">Active Providers</div></div>
       </div>
       <div style="margin-bottom:16px">
         <div style="font-size:18px;font-weight:700;margin-bottom:8px">National Plan and Provider Enumeration System</div>

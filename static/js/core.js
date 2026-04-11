@@ -37,6 +37,8 @@ function _closeSidebar() {
 
 function switchView(view) {
   _closeSidebar();
+  BannerAnimation.destroy();
+  if (view !== 'home') document.getElementById('topbar-pills').innerHTML = '';
   currentView = view;
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);

@@ -52,7 +52,7 @@ const HOME_FEATURES = [
     view: 'entity-search',
     icon: `<svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
     title: 'Entity Search',
-    color: 'var(--accent)',
+    color: '#f97316',
     summary: 'Cross-list entity name and identifier lookup.',
     description: 'Search by name, alias, ID number, or country across all loaded sanctions datasets simultaneously. Supports fuzzy matching and returns full sanction records with authority, program, listing date, and source URLs.',
     tags: ['Name Search', 'Alias', 'Cross-List', 'Fuzzy Match'],
@@ -61,7 +61,7 @@ const HOME_FEATURES = [
     view: 'countries',
     icon: `<svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
     title: 'Search by Country',
-    color: 'var(--green)',
+    color: '#60a5fa',
     summary: 'Filter all sanctions entities by nationality or jurisdiction.',
     description: 'Select any country to see every sanctioned individual and entity associated with that jurisdiction across all active datasets. Useful for country-risk assessments and geographic exposure analysis.',
     tags: ['Country Risk', 'Jurisdiction', 'Geographic Filter'],
@@ -70,7 +70,7 @@ const HOME_FEATURES = [
     view: 'tags',
     icon: `<svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`,
     title: 'Tags',
-    color: 'var(--accent2)',
+    color: '#9ca3af',
     summary: 'Browse datasets grouped by topic or category tag.',
     description: 'Explore the dataset catalog through curated topic tags — sanctions, debarment, crime, terrorism, proliferation, and more. Click any tag to see all datasets sharing that classification.',
     tags: ['Terrorism', 'Proliferation', 'Debarment', 'Crime'],
@@ -142,13 +142,18 @@ function renderHomeView() {
   }).join('');
 
   content.innerHTML = `
+    <!-- Animation banner -->
+    <div class="home-banner-wrap">
+      <canvas id="home-banner-canvas"></canvas>
+    </div>
+
     <div style="max-width:1100px;margin:0 auto">
 
       <!-- Hero -->
       <div style="
         text-align:center;
-        padding:48px 24px 40px;
-        margin-bottom:32px;
+        padding:1px 24px 12px;
+        margin-bottom:8px;
       ">
         <div style="
           display:inline-flex;
@@ -189,25 +194,6 @@ function renderHomeView() {
           against 40+ global sanctions, watchlist, and exclusion datasets.
         </p>
 
-        <!-- Quick-nav pills -->
-        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">
-          ${HOME_FEATURES.map(f => `
-            <button onclick="switchView('${f.view}')" style="
-              padding:7px 16px;
-              background:var(--surface);
-              border:1px solid var(--border);
-              border-radius:20px;
-              font-size:12px;
-              color:var(--muted);
-              cursor:pointer;
-              transition:all .15s;
-              font-family:inherit;
-            "
-            onmouseenter="this.style.color='${f.color}';this.style.borderColor='${f.color}'"
-            onmouseleave="this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
-            >${f.title}</button>
-          `).join('')}
-        </div>
       </div>
 
       <!-- Feature cards grid -->
@@ -221,4 +207,27 @@ function renderHomeView() {
       </div>
 
     </div>`;
+
+  // Populate topbar quick-nav pills
+  document.getElementById('topbar-pills').innerHTML = HOME_FEATURES.map(f => `
+    <button onclick="switchView('${f.view}')" style="
+      padding:5px 13px;
+      background:var(--surface2);
+      border:1px solid var(--border);
+      border-radius:20px;
+      font-size:12px;
+      color:var(--muted);
+      cursor:pointer;
+      transition:all .15s;
+      font-family:inherit;
+      white-space:nowrap;
+      flex-shrink:0;
+    "
+    onmouseenter="this.style.color='${f.color}';this.style.borderColor='${f.color}'"
+    onmouseleave="this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+    >${f.title}</button>
+  `).join('');
+
+  // Start the banner animation
+  BannerAnimation.init(document.getElementById('home-banner-canvas'));
 }

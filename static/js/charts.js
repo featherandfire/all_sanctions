@@ -233,11 +233,138 @@ function drawPieChart(containerId, data, colors, opts) {
   });
 }
 
+function drawHorizontalStackedBarChart(containerId, sectors, items) {
+  const container = document.getElementById(containerId);
+  if (!container || !items.length) return;
+
+  const COLORS = ['#60a5fa','#34d399','#facc15','#a78bfa','#ef4444','#f97316','#9ca3af'];
+  const barH   = 28;
+  const margin = { top: 8, right: 16, bottom: 8, left: 50 };
+  const totalW = container.clientWidth || 600;
+  const w      = totalW - margin.left - margin.right;
+  const totalH = items.length * barH + margin.top + margin.bottom;
+
+  const x = d3.scaleLinear().domain([0, d3.max(items, d => d.total) * 1.08]).nice().range([0, w]);
+  const y = d3.scaleBand().domain(items.map(d => d.state)).range([0, items.length * barH]).padding(0.18);
+
+  const svg = d3.select(`#${containerId}`).append('svg')
+    .attr('width', totalW).attr('height', totalH)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Grid lines
+  svg.append('g')
+    .call(d3.axisTop(x).ticks(5).tickSize(-(items.length * barH)).tickFormat(''))
+    .selectAll('line').style('stroke', '#2a2f3d').style('stroke-dasharray', '3,3');
+  svg.selectAll('.domain').remove();
+
+  // Y axis (year labels)
+  svg.append('g').call(d3.axisLeft(y).tickSize(0))
+    .selectAll('text').style('fill', '#94a3b8').style('font-size', '11px').attr('dx', '-6');
+  svg.select('.domain').remove();
+
+  const tip = _ensureTooltip('hstacked-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none');
+
+  // Stacked layers
+  const stack = d3.stack().keys(sectors)(items);
+  stack.forEach((layer, i) => {
+    svg.selectAll(null).data(layer).enter().append('rect')
+      .attr('y', d => y(d.data.state))
+      .attr('x', d => x(d[0]))
+      .attr('width', d => Math.max(0, x(d[1]) - x(d[0])))
+      .attr('height', y.bandwidth())
+      .attr('fill', COLORS[i % COLORS.length])
+      .attr('opacity', 0.88)
+      .on('mousemove', function(event, d) {
+        const val = d[1] - d[0];
+        if (val <= 0) return;
+        tip.style.display = 'block';
+        tip.style.left = (event.clientX + 12) + 'px';
+        tip.style.top  = (event.clientY - 10) + 'px';
+        tip.innerHTML = `<strong>${esc(d.data.state)}</strong> — ${esc(sectors[i])}<br>${val.toLocaleString()} records`;
+        d3.select(this).attr('opacity', 1);
+      })
+      .on('mouseleave', function() { tip.style.display = 'none'; d3.select(this).attr('opacity', 0.88); });
+  });
+
+  // Total labels at end of each bar
+  svg.selectAll('.htotal').data(items).enter().append('text')
+    .attr('x', d => x(d.total) + 5)
+    .attr('y', d => y(d.state) + y.bandwidth() / 2)
+    .attr('dy', '0.35em')
+    .style('font-size', '10px').style('fill', '#64748b')
+    .text(d => d.total >= 1000 ? (d.total / 1000).toFixed(1) + 'k' : d.total);
+}
+
+function drawLollipopChart(containerId, data, color) {
+  const container = document.getElementById(containerId);
+  if (!container || !data.length) return;
+
+  const dotR   = 6;
+  const barH   = 32;
+  const margin = { top: 8, right: 70, bottom: 8, left: 180 };
+  const totalW = container.clientWidth || 520;
+  const w      = totalW - margin.left - margin.right;
+  const totalH = data.length * barH + margin.top + margin.bottom;
+
+  const svg = d3.select(`#${containerId}`).append('svg')
+    .attr('width', totalW).attr('height', totalH)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const x = d3.scaleLinear().domain([0, d3.max(data, d => d.value) * 1.1]).nice().range([0, w]);
+  const y = d3.scaleBand().domain(data.map(d => d.label)).range([0, data.length * barH]).padding(0.2);
+
+  // Faint grid lines
+  svg.append('g')
+    .call(d3.axisTop(x).ticks(5).tickSize(-(data.length * barH)).tickFormat(''))
+    .selectAll('line').style('stroke', '#2a2f3d').style('stroke-dasharray', '3,3');
+  svg.selectAll('.domain').remove();
+
+  // Y axis labels
+  svg.append('g').call(d3.axisLeft(y).tickSize(0))
+    .selectAll('text')
+    .style('fill', '#94a3b8').style('font-size', '11px')
+    .attr('dx', '-6');
+  svg.select('.domain').remove();
+
+  const tip = _ensureTooltip('lollipop-tooltip', 'position:fixed;pointer-events:none;background:#1e222d;border:1px solid #2a2f3d;border-radius:8px;padding:7px 12px;font-size:12px;color:#e2e8f0;z-index:9999;display:none');
+
+  const midY = d => y(d.label) + y.bandwidth() / 2;
+
+  // Stems
+  svg.selectAll('.stem').data(data).enter().append('line')
+    .attr('class', 'stem')
+    .attr('x1', 0).attr('x2', d => x(d.value))
+    .attr('y1', midY).attr('y2', midY)
+    .attr('stroke', color).attr('stroke-width', 2).attr('opacity', 0.45);
+
+  // Dots
+  svg.selectAll('.dot').data(data).enter().append('circle')
+    .attr('class', 'dot')
+    .attr('cx', d => x(d.value)).attr('cy', midY).attr('r', dotR)
+    .attr('fill', color).attr('opacity', 0.9)
+    .style('cursor', 'pointer')
+    .on('mousemove', function(event, d) {
+      tip.style.display = 'block';
+      tip.style.left = (event.clientX + 12) + 'px';
+      tip.style.top  = (event.clientY - 10) + 'px';
+      tip.innerHTML = `<strong>${esc(d.label)}</strong><br>${d.value.toLocaleString()} records`;
+      d3.select(this).attr('r', dotR + 2).attr('opacity', 1);
+    })
+    .on('mouseleave', function() { tip.style.display = 'none'; d3.select(this).attr('r', dotR).attr('opacity', 0.9); });
+
+  // Value labels
+  svg.selectAll('.lollipop-label').data(data).enter().append('text')
+    .attr('x', d => x(d.value) + dotR + 5)
+    .attr('y', midY).attr('dy', '0.35em')
+    .style('font-size', '10px').style('fill', '#64748b')
+    .text(d => d.value >= 1000 ? (d.value / 1000).toFixed(1) + 'k' : d.value);
+}
+
 function drawStackedBarChart(containerId, sectors, states) {
   const container = document.getElementById(containerId);
   if (!container || !states.length) return;
 
-  const COLORS = ['#4f8ef7','#3ecf8e','#f6c90e','#7c5cbf','#f56565','#38bdf8','#fb923c','#a3e635','#e879f9','#34d399','#fbbf24','#818cf8','#f472b6','#2dd4bf','#facc15','#e11d48','#0891b2','#65a30d','#9333ea','#ea580c','#64748b'];
+  const COLORS = ['#60a5fa','#34d399','#facc15','#a78bfa','#ef4444','#f97316','#9ca3af'];
   const margin = { top: 10, right: 16, bottom: 72, left: 50 };
   const totalW = container.clientWidth || 600;
   const totalH = 560;
@@ -289,38 +416,3 @@ function drawStackedBarChart(containerId, sectors, states) {
   });
 }
 
-function _drawMedicaidRateChart() {
-  const el = document.getElementById('pie-medicaid-rate');
-  if (!el || !_statsMeta || !_statsMeta.popData || !_statsMeta.medicaidByState) return;
-
-  // Build state-name → population lookup
-  const popMap = {};
-  for (const { label, value } of _statsMeta.popData) popMap[label] = value;
-
-  // National totals
-  const totalExcluded = Object.values(_statsMeta.medicaidByState).reduce((s, n) => s + n, 0);
-  const totalPop      = _statsMeta.popData.reduce((s, r) => s + r.value, 0);
-
-  // Overrepresentation = (state_excluded% of national) - (state_pop% of national)
-  // Positive → state has disproportionately more exclusions than its population share
-  const rateData = [];
-  for (const [state, excluded] of Object.entries(_statsMeta.medicaidByState)) {
-    const pop = popMap[state];
-    if (!pop || !excluded) continue;
-    const exclPct = (excluded / totalExcluded) * 100;
-    const popPct  = (pop      / totalPop)      * 100;
-    const diff    = parseFloat((exclPct - popPct).toFixed(4));
-    if (diff > 0) rateData.push({ label: state, value: diff });
-  }
-  rateData.sort((a, b) => b.value - a.value);
-
-  el.innerHTML = '';
-  drawPieChart('pie-medicaid-rate', rateData.slice(0, 10), null, {
-    colorMap: STATE_COLOR_MAP,
-    unit: 'pp over population share',
-    centerLabel: 'states',
-    centerValue: rateData.slice(0, 10).length.toString(),
-    valueFmt: v => '+' + v.toFixed(2) + 'pp',
-    legendFmt: v => '+' + v.toFixed(2) + 'pp',
-  });
-}

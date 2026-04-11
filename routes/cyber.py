@@ -530,9 +530,3 @@ def api_address_history_delete(address):
 def api_address_history_clear():
     _save_history([])
     return jsonify({"ok": True})
-
-
-@cyber_bp.route("/api/etherscan-key")
-def api_etherscan_key():
-    """Return the Etherscan API key for direct browser calls."""
-    return jsonify({"key": ETHERSCAN_API_KEY})

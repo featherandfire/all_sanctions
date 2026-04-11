@@ -18,11 +18,38 @@ _US_STATES = {
     'NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN',
     'TX','UT','VT','VA','WA','WV','WI','WY','DC',
 }
+_ABBR_TO_STATE = {
+    'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas',
+    'CA':'California','CO':'Colorado','CT':'Connecticut','DE':'Delaware',
+    'FL':'Florida','GA':'Georgia','HI':'Hawaii','ID':'Idaho',
+    'IL':'Illinois','IN':'Indiana','IA':'Iowa','KS':'Kansas',
+    'KY':'Kentucky','LA':'Louisiana','ME':'Maine','MD':'Maryland',
+    'MA':'Massachusetts','MI':'Michigan','MN':'Minnesota','MS':'Mississippi',
+    'MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada',
+    'NH':'New Hampshire','NJ':'New Jersey','NM':'New Mexico','NY':'New York',
+    'NC':'North Carolina','ND':'North Dakota','OH':'Ohio','OK':'Oklahoma',
+    'OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina',
+    'SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah',
+    'VT':'Vermont','VA':'Virginia','WA':'Washington','WV':'West Virginia',
+    'WI':'Wisconsin','WY':'Wyoming','DC':'Washington D.C.',
+}
+
+_US_STATE_FULL_NAMES = {
+    'alabama','alaska','arizona','arkansas','california','colorado','connecticut',
+    'delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa',
+    'kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan',
+    'minnesota','mississippi','missouri','montana','nebraska','nevada',
+    'new hampshire','new jersey','new mexico','new york','north carolina',
+    'north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island',
+    'south carolina','south dakota','tennessee','texas','utah','vermont',
+    'virginia','washington','west virginia','wisconsin','wyoming',
+    'district of columbia',
+}
 _STREET_SUFFIXES = {
     'st','ave','blvd','dr','rd','ln','ct','pl','way','hwy','pkwy','cir','ter',
 }
 
-# Manual city patches for records whose stored address is truncated (no city/state in source data)
+# Manual city patches 
 _ADDRESS_CITY_PATCH = {
     '621 e. cypress ave.': 'Glendora',
     '301 ferrari way':     'Lincoln',
@@ -56,7 +83,12 @@ def _city_from_address(address):
         return patched
 
     def _valid(city):
-        return bool(city and re.search(r'[A-Za-z]', city) and not re.match(r'^\d+$', city.strip()))
+        return bool(
+            city
+            and re.search(r'[A-Za-z]', city)
+            and not re.match(r'^\d+$', city.strip())
+            and city.strip().lower() not in _US_STATE_FULL_NAMES
+        )
 
     # Branch 1: trailing state abbreviation (comma-separated)
     state_end = re.search(r',?\s*([A-Z]{2})\s*(?:\d{5}(?:-\d{4})?)?\s*$', address.strip())
@@ -415,35 +447,35 @@ def api_medicaid_state_sectors():
     if not ds_names:
         return jsonify({"sectors": [], "states": [], "partial": True})
 
-    def _state_abbr(name):
+    def _ds_to_state(name):
         m = re.match(r'^us_([a-z]{2})_', name)
-        return m.group(1).upper() if m else 'FED'
+        return _ABBR_TO_STATE.get(m.group(1).upper(), m.group(1).upper()) if m else 'Federal'
 
     batch = _get_entities_batch(ds_names)
     state_sector = {}
     sector_totals = Counter()
 
     for name in ds_names:
-        abbr = _state_abbr(name)
-        if abbr not in state_sector:
-            state_sector[abbr] = Counter()
+        state = _ds_to_state(name)
+        if state not in state_sector:
+            state_sector[state] = Counter()
         for row in batch.get(name, []):
             raw = row.get("sector") or row.get("position") or row.get("title") or ""
             for part in raw.split(","):
                 s = _normalize_sector(part)
                 if s:
-                    state_sector[abbr][s] += 1
+                    state_sector[state][s] += 1
                     sector_totals[s] += 1
 
     top5 = [s for s, _ in sector_totals.most_common(20)]
     keys = top5 + ["Other"]
 
     states_data = []
-    for abbr, counts in state_sector.items():
+    for state, counts in state_sector.items():
         total = sum(counts.values())
         if not total:
             continue
-        entry = {"state": abbr, "total": total}
+        entry = {"state": state, "total": total}
         for s in top5:
             entry[s] = counts.get(s, 0)
         entry["Other"] = total - sum(counts.get(s, 0) for s in top5)
@@ -452,6 +484,61 @@ def api_medicaid_state_sectors():
     states_data.sort(key=lambda x: -x["total"])
     result = {"sectors": keys, "states": states_data[:20]}
     l2.set("medicaid_stats", "state-sectors", result)
+    return jsonify(result)
+
+
+@datasets_bp.route("/api/stats/medicaid-year-by-state")
+def api_medicaid_year_by_state():
+    """Exclusions by year, stacked by top-10 states."""
+    cached = l2.get("medicaid_stats", "year-by-state")
+    if cached is not None:
+        return jsonify(cached)
+
+    ds_names = _warm_medicaid_names()
+    if not ds_names:
+        return jsonify({"sectors": [], "states": []})
+
+    def _state_name(ds):
+        m = re.match(r'^us_([a-z]{2})_', ds)
+        if not m:
+            return "Federal"
+        abbr = m.group(1).upper()
+        return _ABBR_TO_STATE.get(abbr, abbr)
+
+    # Build state totals to pick top 10
+    batch = _get_entities_batch(ds_names)
+    state_totals = Counter()
+    for ds in ds_names:
+        state = _state_name(ds)
+        state_totals[state] += len(batch.get(ds, []))
+
+    top10_states = [s for s, _ in state_totals.most_common(10)]
+
+    # Build year → state counts
+    year_state = {}
+    for ds in ds_names:
+        state = _state_name(ds)
+        if state not in top10_states:
+            continue
+        for row in batch.get(ds, []):
+            val = row.get("first_seen") or ""
+            year = val[:4]
+            if year.isdigit() and 2000 <= int(year) <= 2100:
+                if year not in year_state:
+                    year_state[year] = Counter()
+                year_state[year][state] += 1
+
+    years_data = []
+    for year in sorted(year_state.keys()):
+        counts = year_state[year]
+        total = sum(counts.values())
+        entry = {"state": year, "total": total}
+        for s in top10_states:
+            entry[s] = counts.get(s, 0)
+        years_data.append(entry)
+
+    result = {"sectors": top10_states, "states": years_data}
+    l2.set("medicaid_stats", "year-by-state", result)
     return jsonify(result)
 
 

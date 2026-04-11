@@ -15,11 +15,15 @@ async function renderTagsView() {
   ).join('');
 
   content.innerHTML = `
+    <div class="home-banner-wrap home-banner-wrap--sm"><canvas id="tags-banner-canvas"></canvas></div>
+    <div id="tags-body">
     <div class="results-header">
       <div class="results-count">${tags.length} unique tags across all datasets</div>
     </div>
     <div class="tags-section" style="margin-bottom:0">
       <div class="tags-cloud">${pills}</div>
     </div>
+    </div>
   `;
+  BannerAnimation.init(document.getElementById('tags-banner-canvas'));
 }
