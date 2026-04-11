@@ -327,18 +327,20 @@ def _warm_medicaid_names():
 
 def _medicaid_entities(default="us_ca_med_exclusions"):
     """Return entity rows for warm (cached) medicaid datasets only.
-    Falls back to the default single dataset if nothing is warm yet,
-    so the page always renders something rather than timing out.
+    Never triggers a cold network fetch — returns [] if nothing is in L1/L2.
     Accepts ?datasets=name1,name2 (comma-separated) or legacy ?dataset=name."""
     raw = request.args.get("datasets") or request.args.get("dataset") or ""
     if raw:
-        # Caller specified datasets explicitly — honour that, load from cache only
         names = [n.strip() for n in raw.split(",") if n.strip()]
-        warm  = [n for n in names if n in _entity_cache or l2.exists("entity", n)]
-        names = warm or names[:1]   # at most one cold fetch if nothing warm
+        names = [n for n in names if n in _entity_cache or l2.exists("entity", n)]
     else:
         warm = _warm_medicaid_names()
-        names = warm if warm else [default]
+        if warm:
+            names = warm
+        elif default in _entity_cache or l2.exists("entity", default):
+            names = [default]
+        else:
+            return []  # nothing warm — avoid cold network fetch that causes 524
 
     if len(names) == 1:
         return _get_entities(names[0])
@@ -385,7 +387,8 @@ def _medicaid_counts(cache_key: str, keys_fn):
         [{"label": k, "value": v} for k, v in counts.items()],
         key=lambda x: -x["value"]
     )
-    l2.set("medicaid_stats", l2_key, result)
+    if result:  # don't cache empty — entity data may not be warm yet
+        l2.set("medicaid_stats", l2_key, result)
     return jsonify(result)
 
 
@@ -483,7 +486,8 @@ def api_medicaid_state_sectors():
 
     states_data.sort(key=lambda x: -x["total"])
     result = {"sectors": keys, "states": states_data[:20]}
-    l2.set("medicaid_stats", "state-sectors", result)
+    if states_data:
+        l2.set("medicaid_stats", "state-sectors", result)
     return jsonify(result)
 
 
@@ -538,7 +542,8 @@ def api_medicaid_year_by_state():
         years_data.append(entry)
 
     result = {"sectors": top10_states, "states": years_data}
-    l2.set("medicaid_stats", "year-by-state", result)
+    if years_data:
+        l2.set("medicaid_stats", "year-by-state", result)
     return jsonify(result)
 
 
