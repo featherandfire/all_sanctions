@@ -224,6 +224,10 @@ def api_crypto_by_country():
       3. Also count any non-wallet entity that directly carries publicKey/currency fields.
     Only returns countries that could be resolved (skips unattributed records).
     """
+    cached = l2.get("stats", "crypto-by-country")
+    if cached is not None:
+        return jsonify(cached)
+
     batch = _get_entities_batch(CRYPTO_SCAN_DATASETS)
 
     country_counts = {}
@@ -255,10 +259,9 @@ def api_crypto_by_country():
                 country_counts[country] = country_counts.get(country, 0) + 1
 
     ranked = sorted(country_counts.items(), key=lambda x: -x[1])[:20]
-    return jsonify([
-        {"label": _COUNTRY_NAMES.get(c, c.upper()), "value": n}
-        for c, n in ranked
-    ])
+    result = [{"label": _COUNTRY_NAMES.get(c, c.upper()), "value": n} for c, n in ranked]
+    l2.set("stats", "crypto-by-country", result)
+    return jsonify(result)
 
 
 @cyber_bp.route("/api/stats/sdn-crypto-country")
@@ -267,6 +270,10 @@ def api_sdn_crypto_country():
     Return CryptoWallet counts from OFAC SDN grouped by the holder's nationality.
     Cross-references wallet holder names against Person/Org entities in the same dataset.
     """
+    cached = l2.get("stats", "sdn-crypto-country")
+    if cached is not None:
+        return jsonify(cached)
+
     rows = _get_entities("us_ofac_sdn")
 
     # Build caption → countries mapping from Person / Org entities
@@ -288,10 +295,9 @@ def api_sdn_crypto_country():
         country_counts[country] = country_counts.get(country, 0) + 1
 
     ranked = sorted(country_counts.items(), key=lambda x: -x[1])[:20]
-    return jsonify([
-        {"label": _COUNTRY_NAMES.get(c.lower(), c), "value": n}
-        for c, n in ranked
-    ])
+    result = [{"label": _COUNTRY_NAMES.get(c.lower(), c), "value": n} for c, n in ranked]
+    l2.set("stats", "sdn-crypto-country", result)
+    return jsonify(result)
 
 
 @cyber_bp.route("/api/cyber-records")
