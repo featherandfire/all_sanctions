@@ -301,7 +301,11 @@ function renderMedicaidStateDatasets(state, byState, medDatasets) {
       fetch('/api/stats/medicaid-year-by-state')
         .then(r => r.json()).then(({ sectors, states }) => {
           const el = document.getElementById('bar-all-year');
-          if (!el || !states.length) return;
+          if (!el) return;
+          if (!states.length) {
+            el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0">Data loads after entity cache warms — revisit in a few minutes.</div>';
+            return;
+          }
           el.innerHTML = '';
           drawHorizontalStackedBarChart('bar-all-year', sectors, states);
           const legendEl = document.getElementById('bar-all-year-legend');
