@@ -6,15 +6,23 @@ A unified interface for screening individuals, entities, and crypto wallets agai
 
 | Layer | Technology |
 |---|---|
-| Data | [OpenSanctions](https://www.opensanctions.org/) — live dataset index + entity records |
 | API | Flask 3 + Blueprints |
-| Cache | L1 in-memory dict → L2 SQLite (aiosqlite) → L3 origin fetch |
+| Cache | RAM → SQLite → origin fallback cache|
 | Frontend | Vanilla JS + D3.js v7 (charts) |
 | Templates | Jinja2 |
 | Data processing | pandas, pgeocode, numpy |
 | Reverse proxy | Caddy (auto-TLS) |
 | WSGI server | Gunicorn |
 | Process manager | systemd |
+
+## APIs
+
+| Description | URL |
+|---|---|
+| Population data | [US Census Bureau ACS API](https://www.census.gov/data/developers/data-sets/acs-1year.html) — state population for Medicaid offense rate charts |
+| Data | [OpenSanctions](https://www.opensanctions.org/) — live dataset index + entity records |
+| Provider data | [NPPES NPI Registry API](https://npiregistry.cms.hhs.gov/api-page) — provider lookup for Medicaid exclusion cross-reference |
+
 
 ## Views
 
